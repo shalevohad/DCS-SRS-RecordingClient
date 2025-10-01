@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36511.14 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DCS-SRS-RecordingClient.UI", "DCS-SRS-RecordingClient.UI\DCS-SRS-RecordingClient.UI.csproj", "{AE77CA58-7DC8-4ED0-BE2E-C66B2C88E693}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DCS-SRS-RecordingClient.CLI", "DCS-SRS-RecordingClient.CLI\DCS-SRS-RecordingClient.CLI.csproj", "{AD777114-1A73-4962-A56B-8E6F5629929C}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{AE77CA58-7DC8-4ED0-BE2E-C66B2C88E693}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AE77CA58-7DC8-4ED0-BE2E-C66B2C88E693}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AE77CA58-7DC8-4ED0-BE2E-C66B2C88E693}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AE77CA58-7DC8-4ED0-BE2E-C66B2C88E693}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AD777114-1A73-4962-A56B-8E6F5629929C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AD777114-1A73-4962-A56B-8E6F5629929C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AD777114-1A73-4962-A56B-8E6F5629929C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AD777114-1A73-4962-A56B-8E6F5629929C}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {A69D52EC-5151-4003-AFE5-F5A8993F7A45}
+	EndGlobalSection
+EndGlobal
