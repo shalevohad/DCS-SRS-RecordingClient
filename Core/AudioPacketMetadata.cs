@@ -15,6 +15,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
         string TransmitterGuid,
         int SampleRate,
         int ChannelCount,
+        int Coalition,
         byte[] AudioPayload
     )
     {
@@ -38,6 +39,8 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
                 writer.Write(AudioPayload?.Length ?? 0);
                 if (AudioPayload != null && AudioPayload.Length > 0)
                     writer.Write(AudioPayload);
+
+                writer.Write(Coalition);
                 return true;
             }
             catch (Exception ex)
@@ -64,6 +67,8 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
                 int audioLength = reader.ReadInt32();
                 byte[] audioPayload = audioLength > 0 ? reader.ReadBytes(audioLength) : Array.Empty<byte>();
 
+                int coalition = reader.ReadInt32();
+
                 metadata = new AudioPacketMetadata(
                     new DateTime(ticks, DateTimeKind.Utc),
                     frequency,
@@ -72,6 +77,9 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
                     transmitterUnitId,
                     packetId,
                     transmitterGuid,
+                    48000, // SampleRate (default or fetch as needed)
+                    1,     // ChannelCount (default or fetch as needed)
+                    coalition,
                     audioPayload
                 );
                 return true;

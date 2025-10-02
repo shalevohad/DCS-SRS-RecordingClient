@@ -1,16 +1,16 @@
-using System;
-using System.IO;
-using System.Net;
-using System.Threading;
-using System.Threading.Tasks;
+using Caliburn.Micro; // For IHandle<T>
 using Ciribob.DCS.SimpleRadio.Standalone.Common;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Network.Client;
-using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player;
+using Ciribob.DCS.SimpleRadio.Standalone.Common.Network.Singletons;
 using NLog;
+using System.Net;
+using System.Collections.Concurrent;
+using SRSTCPClientStatusMessage = Ciribob.DCS.SimpleRadio.Standalone.Common.Models.EventMessages.TCPClientStatusMessage;
+using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player;
 
 namespace ShalevOhad.DCS.SRS.Recorder.Core
 {
-    public class AudioPacketRecorder
+    public class AudioPacketRecorder : IHandle<SRSTCPClientStatusMessage>
     {
         private TCPClientHandler? _tcpClientHandler;
         private UDPVoiceHandler? _udpVoiceHandler;
@@ -18,41 +18,24 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
         private CancellationTokenSource? _recordingCts;
         private string? _outputFile;
         private string? _clientGuid;
-        private IPEndPoint? _serverEndpoint;
-        private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
+        private IPEndPoint? _serverUdpEndpoint;
+        private static readonly Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
         private int _sampleRate = Constants.OUTPUT_SAMPLE_RATE; // Usually 48000
         private int _channelCount = 1; // Mono (default for SRS voice)
+
+        private readonly ConcurrentQueue<AudioPacketMetadata> _writeQueue = new();
+        private Task? _writerTask;
+        private readonly object _fileWriteLock = new();
+        private bool _writerRunning = false;
 
         public bool IsConnected => _tcpClientHandler?.TCPConnected ?? false;
 
         /// <summary>
         /// Connects to the SRS server using TCP for control and UDP for audio.
+        /// Uses RecorderSettingsStore for default values if parameters are not provided.
+        /// Uses RecordingClientState.Instance for client state and GUID.
         /// </summary>
-        public void Connect(string serverIp, int tcpPort, int udpPort, string clientGuid, SRClientBase clientState)
-        {
-            try
-            {
-                _clientGuid = clientGuid;
-                _serverEndpoint = new IPEndPoint(IPAddress.Parse(serverIp), udpPort);
-
-                // TCP for control
-                var tcpEndpoint = new IPEndPoint(IPAddress.Parse(serverIp), tcpPort);
-                _tcpClientHandler = new TCPClientHandler(clientGuid, clientState);
-                _tcpClientHandler.TryConnect(tcpEndpoint);
-
-                // UDP for audio
-                _udpVoiceHandler = new UDPVoiceHandler(clientGuid, _serverEndpoint);
-                _udpVoiceHandler.Connect();
-
-                Logger.Info("Connected to SRS server (TCP/UDP).");
-            }
-            catch (Exception ex)
-            {
-                Logger.Error(ex, "Failed to connect to SRS server.");
-                throw;
-            }
-        }
 
         public void Disconnect()
         {
@@ -62,25 +45,59 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
             StopRecording();
             _udpVoiceHandler?.RequestStop();
             _udpVoiceHandler = null;
+            EventBus.Instance.Unsubcribe(this);
+
+            ConnectionStatusChanged?.Invoke(
+                new SRSTCPClientStatusMessage(
+                    false,
+                    SRSTCPClientStatusMessage.ErrorCode.USER_DISCONNECTED
+                )
+            );
         }
 
         /// <summary>
         /// Starts recording incoming UDP audio packets to a raw file.
+        /// Uses RecorderSettingsStore for default file path if not provided.
         /// </summary>
-        public void StartRecording(string filePath)
+        public void StartRecording(string? filePath = null)
         {
+            // Prevent starting if already recording
+            if (_recordingCts != null && !_recordingCts.IsCancellationRequested)
+                return;
+
             if (_udpVoiceHandler == null)
                 throw new InvalidOperationException("UDPVoiceHandler not initialized.");
 
-            _outputFile = filePath;
-            _fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write);
+            var settings = RecorderSettingsStore.Instance;
+            _outputFile = filePath ?? settings.GetRecorderSettingString(RecorderSettingKeys.RecordingFile);
+            _fileStream = new FileStream(_outputFile, FileMode.Create, FileAccess.Write);
             _recordingCts = new CancellationTokenSource();
+
+            _writerRunning = true;
+            _writerTask = Task.Run(() => WriterLoop(_recordingCts.Token));
+
             Task.Run(() => RecordingLoop(_recordingCts.Token));
         }
 
         public void StopRecording()
         {
             _recordingCts?.Cancel();
+            _writerRunning = false;
+            try
+            {
+                _writerTask?.Wait();
+            }
+            catch (AggregateException ae)
+            {
+                foreach (var ex in ae.InnerExceptions)
+                {
+                    Logger.Error(ex, "Error during writer task shutdown.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Error during writer task shutdown.");
+            }
             _fileStream?.Dispose();
             _fileStream = null;
         }
@@ -102,13 +119,9 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
                         if (packet != null && packet.Length > 0)
                         {
                             var meta = ExtractAudioMetadata(packet);
-
-                            // Use TryWriteMetadata to serialize metadata and audio payload
-                            using var bw = new BinaryWriter(_fileStream!, System.Text.Encoding.UTF8, leaveOpen: true);
-                            if (!meta.TryWriteMetadata(bw))
-                            {
-                                Logger.Error("Failed to write audio packet metadata.");
-                            }
+                            // Notify listeners (CLI) about the received packet
+                            PacketReceived?.Invoke(meta);
+                            _writeQueue.Enqueue(meta);
                         }
                     }
                 }
@@ -151,6 +164,20 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
 
             string transmitterGuid = System.Text.Encoding.ASCII.GetString(packet, offset, 22); offset += 22;
 
+            int coalition = BitConverter.ToInt32(packet, offset); offset += 4;
+
+            // Check if the client allows recording
+            bool allowRecord = true;
+            var clients = ConnectedClientsSingleton.Instance;
+            var client = clients.TryGetValue(transmitterGuid, out var foundClient) ? foundClient : null;
+            if (client != null && client is SRClientBase srClient)
+            {
+                allowRecord = srClient.AllowRecord;
+            }
+
+            // Only add audioPayload if allowed
+            byte[] payloadToWrite = allowRecord ? audioPayload : Array.Empty<byte>();
+
             return new AudioPacketMetadata(
                 DateTime.UtcNow,
                 frequency,
@@ -161,8 +188,88 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
                 transmitterGuid,
                 _sampleRate,
                 _channelCount,
-                audioPayload
+                coalition,
+                payloadToWrite
             );
+        }
+
+        public event Action<AudioPacketMetadata>? PacketReceived;
+        public event Action<SRSTCPClientStatusMessage>? ConnectionStatusChanged;
+
+        public async Task HandleAsync(SRSTCPClientStatusMessage status, CancellationToken cancellationToken)
+        {
+            Logger.Info($"[EventBus] Received TCPClientStatusMessage: Connected={status.Connected}, Error={status.Error}");
+            if (!status.Connected)
+            {
+                Logger.Warn($"Disconnected from server. Reason: {status.Error}");
+
+                // Stop recording and clean up UDP
+                StopRecording();
+                _udpVoiceHandler?.RequestStop();
+                _udpVoiceHandler = null;
+
+                // Notify listeners (CLI/UI)
+                ConnectionStatusChanged?.Invoke(status);
+            }
+            else
+            {
+                // Connected: start UDP if not already started
+                if (_udpVoiceHandler == null && _serverUdpEndpoint != null)
+                {
+                    _udpVoiceHandler = new UDPVoiceHandler(_clientGuid, _serverUdpEndpoint);
+                    _udpVoiceHandler.Connect();
+                }
+                ConnectionStatusChanged?.Invoke(status);
+            }
+        }
+
+        public async Task ConnectAsync(
+            string? serverIp = null,
+            int? tcpPort = null,
+            int? udpPort = null)
+        {
+            var settings = RecorderSettingsStore.Instance;
+            var state = RecordingClientState.Instance;
+            _clientGuid = state.ClientGuid;
+
+            string ip = serverIp ?? settings.GetRecorderSettingString(RecorderSettingKeys.ServerIp);
+            int tcp = tcpPort ?? settings.GetRecorderSettingInt(RecorderSettingKeys.TcpPort);
+            int udp = udpPort ?? settings.GetRecorderSettingInt(RecorderSettingKeys.UdpPort);
+
+            _serverUdpEndpoint = new IPEndPoint(IPAddress.Parse(ip), udp);
+
+            // Subscribe to EventBus for SRSTCPClientStatusMessage events
+            EventBus.Instance.SubscribeOnPublishedThread(this);
+
+            var tcpEndpoint = new IPEndPoint(IPAddress.Parse(ip), tcp);
+            _tcpClientHandler = new TCPClientHandler(_clientGuid, state);
+            _tcpClientHandler.TryConnect(tcpEndpoint);
+        }
+
+        private async Task WriterLoop(CancellationToken token)
+        {
+            while (_writerRunning && !token.IsCancellationRequested)
+            {
+                if (_writeQueue.TryDequeue(out var meta))
+                {
+                    try
+                    {
+                        lock (_fileWriteLock)
+                        {
+                            using var bw = new BinaryWriter(_fileStream!, System.Text.Encoding.UTF8, leaveOpen: true);
+                            meta.TryWriteMetadata(bw);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Error(ex, "Error writing audio packet metadata from queue.");
+                    }
+                }
+                else
+                {
+                    await Task.Delay(10, token); // Avoid busy wait
+                }
+            }
         }
     }
 }
