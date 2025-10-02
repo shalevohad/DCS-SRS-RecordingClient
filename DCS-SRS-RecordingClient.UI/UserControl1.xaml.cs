@@ -9,7 +9,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Shapes;
 
-namespace DCS_SRS_RecordingClient.UI
+namespace ShalevOhad.DCS.SRS.Recorder.UI
 {
     /// <summary>
     /// Interaction logic for UserControl1.xaml
