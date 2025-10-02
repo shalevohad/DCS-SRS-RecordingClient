@@ -55,6 +55,7 @@ jobs:
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
+         submodules: true # This automatically initializes and updates submodules
 
     # Install the .NET Core workload
     - name: Install .NET Core
@@ -84,19 +85,8 @@ jobs:
   
   publish:
     name: publish
-    runs-on: windows-2022
+    runs-on: windows-latest
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    - uses: actions/setup-dotnet@v5
-      with:
-        dotnet-version: '9.0.x'
-    - name: Add msbuild to PATH
-      uses: microsoft/setup-msbuild@v1
-    - name: Setup NuGet
-      uses: nuget/setup-nuget@v1
-    - name: Restore NuGet packages
-      run: nuget restore
     - name: Publish
       run: ./publish.ps1 -NoSign -Zip
     - name: Upload
