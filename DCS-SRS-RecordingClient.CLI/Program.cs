@@ -55,6 +55,7 @@
             // Try to connect and start recording only if connected
             while (true)
             {
+                Console.WriteLine("\n-----------------------------------------------------");
                 Console.WriteLine($"Trying to connect to server at {serverIp} (TCP:{tcpPort}, UDP:{udpPort})...");
                 await recorder.ConnectAsync(serverIp, tcpPort, udpPort);
 
@@ -70,9 +71,8 @@
                 {
                     string recordingFile = settings.GetRecorderSettingString(RecorderSettingKeys.RecordingFile);
                     recorder.StartRecording(recordingFile);
-                    Console.WriteLine("-----------------------------------------------------");
                     Console.WriteLine($"Recording to file: '{recordingFile}'...");
-                    Console.WriteLine("to stop recording and disconnect press Ctrl+C or close window");
+                    Console.WriteLine("to stop recording and disconnect: press Ctrl+C or close the window");
                     Console.WriteLine("-----------------------------------------------------");
                     Console.WriteLine("\nListening for incoming packets to record...");
 
