@@ -38,28 +38,17 @@
 
 name: .NET Core Desktop
 
-on:
-  push:
-    branches: [ "master" ]
-  pull_request:
-    branches: [ "master" ]
+on: [push, pull_request]
 
 jobs:
 
   build:
-
     strategy:
       matrix:
         configuration: [Debug, Release]
 
     runs-on: windows-latest  # For a list of available runner types, refer to
                              # https://help.github.com/en/actions/reference/workflow-syntax-for-github-actions#jobsjob_idruns-on
-
-    env:
-      Solution_Name: your-solution-name                         # Replace with your solution name, i.e. MyWpfApp.sln.
-      Test_Project_Path: your-test-project-path                 # Replace with the path to your test project, i.e. MyWpfApp.Tests\MyWpfApp.Tests.csproj.
-      Wap_Project_Directory: your-wap-project-directory-name    # Replace with the Wap project directory relative to the solution, i.e. MyWpfApp.Package.
-      Wap_Project_Path: your-wap-project-path                   # Replace with the path to your Wap project, i.e. MyWpf.App.Package\MyWpfApp.Package.wapproj.
 
     steps:
     - name: Checkout
@@ -69,9 +58,9 @@ jobs:
 
     # Install the .NET Core workload
     - name: Install .NET Core
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@v5
       with:
-        dotnet-version: 8.0.x
+        dotnet-version: 9.0.x
 
     # Add  MSBuild to the PATH: https://github.com/microsoft/setup-msbuild
     - name: Setup MSBuild.exe
@@ -86,40 +75,34 @@ jobs:
       run: msbuild $env:Solution_Name /t:Restore /p:Configuration=$env:Configuration
       env:
         Configuration: ${{ matrix.configuration }}
-
-    - name: Check vulnerable NuGet packages
-      # You may pin to the exact commit or the version.
-      # uses: elmahio/github-check-vulnerable-nuget-packages-action@29003e92dc014c9b90f78a6f3ee7e8811f9ded0f
-      uses: elmahio/github-check-vulnerable-nuget-packages-action@v1
-      with:
-        # The project or solution file to operate on. If a file is not specified, the command will search current directory for one.
-        project: DCS-SRS-RecordingClient
+        
+    - name: Setup NuGet
+      uses: nuget/setup-nuget@v1
           
-
-    # Decode the base 64 encoded pfx and save the Signing_Certificate
-    - name: Decode the pfx
-      run: |
-        $pfx_cert_byte = [System.Convert]::FromBase64String("${{ secrets.Base64_Encoded_Pfx }}")
-        $certificatePath = Join-Path -Path $env:Wap_Project_Directory -ChildPath GitHubActionsWorkflow.pfx
-        [IO.File]::WriteAllBytes("$certificatePath", $pfx_cert_byte)
-
-    # Create the app package by building and packaging the Windows Application Packaging project
-    - name: Create the app package
-      run: msbuild $env:Wap_Project_Path /p:Configuration=$env:Configuration /p:UapAppxPackageBuildMode=$env:Appx_Package_Build_Mode /p:AppxBundle=$env:Appx_Bundle /p:PackageCertificateKeyFile=GitHubActionsWorkflow.pfx /p:PackageCertificatePassword=${{ secrets.Pfx_Key }}
-      env:
-        Appx_Bundle: Always
-        Appx_Bundle_Platforms: x86|x64
-        Appx_Package_Build_Mode: StoreUpload
-        Configuration: ${{ matrix.configuration }}
-
-    # Remove the pfx
-    - name: Remove the pfx
-      run: Remove-Item -path $env:Wap_Project_Directory\GitHubActionsWorkflow.pfx
-
-    # Upload the MSIX package: https://github.com/marketplace/actions/upload-a-build-artifact
-    - name: Upload build artifacts
+    - name: Restore NuGet packages
+      run: nuget restore
+  
+  publish:
+    name: publish
+    runs-on: windows-2022
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: '9.0.x'
+    - name: Add msbuild to PATH
+      uses: microsoft/setup-msbuild@v1
+    - name: Setup NuGet
+      uses: nuget/setup-nuget@v1
+    - name: Restore NuGet packages
+      run: nuget restore
+    - name: Publish
+      run: ./publish.ps1 -NoSign -Zip
+    - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: MSIX Package
-        path: ${{ env.Wap_Project_Directory }}\AppPackages
+        name: DCS-SRS-RecordingClient-CI
+        path: install-build/DCS-SRS-RecordingClient-*.zip
+        compression-level: 0 # Zipping a zip...
           
