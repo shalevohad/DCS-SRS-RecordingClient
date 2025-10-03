@@ -21,7 +21,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
         private IPEndPoint? _serverEndpoint;
         private static readonly Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
-        private int _sampleRate = Constants.OUTPUT_SAMPLE_RATE; // Usually 48000
+        private int _sampleRate = Ciribob.DCS.SimpleRadio.Standalone.Common.Constants.OUTPUT_SAMPLE_RATE; // Usually 48000
         private int _channelCount = 1; // Mono (default for SRS voice)
 
         private readonly ConcurrentQueue<AudioPacketMetadata> _writeQueue = new();

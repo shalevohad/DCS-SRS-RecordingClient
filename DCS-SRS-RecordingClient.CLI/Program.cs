@@ -9,6 +9,9 @@
     {
         static async Task Main(string[] args)
         {
+            Console.WriteLine($"SRS Recording Client Version: {Constants.VERSION}");
+            Console.WriteLine($"Minimum required server version: {Constants.MINIMUM_SERVER_VERSION}");
+
             var settings = RecorderSettingsStore.Instance;
 
             string serverIp = args.Length > 0 ? args[0] : settings.GetRecorderSettingString(RecorderSettingKeys.ServerIp);
@@ -27,6 +30,20 @@
             recorder.ConnectionStatusChanged += status =>
             {
                 lastStatus = status;
+                // TODO : status.ServerVersion should be set by your connection logic
+                //connectedServerVersion = status.ServerVersion;
+
+                //if (!string.IsNullOrEmpty(connectedServerVersion) &&
+                //    Version.TryParse(connectedServerVersion, out var parsedServerVersion) &&
+                //    Version.TryParse(MINIMUM_SERVER_VERSION, out var minServerVersion) &&
+                //    parsedServerVersion < minServerVersion)
+                //{
+                //    Console.WriteLine($"ERROR: Connected server version {connectedServerVersion} is below the minimum required version {MINIMUM_SERVER_VERSION}.");
+                //    Console.WriteLine("Please update your server to a compatible version.");
+                //    recorder.Disconnect();
+                //    Environment.Exit(1);
+                //}
+
                 if (status.Connected)
                 {
                     isConnected = true;
