@@ -1,8 +1,9 @@
 ﻿namespace ShalevOhad.DCS.SRS.Recorder.CLI
 {
+    using Ciribob.DCS.SimpleRadio.Standalone.Common.Models;
+    using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.EventMessages;
     using Core;
     using System;
-    using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.EventMessages;
 
     class Program
     {
