@@ -1,3 +1,4 @@
+using Ciribob.DCS.SimpleRadio.Standalone.Common.Models;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player;
 using System;
 
@@ -15,7 +16,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
                 {
                     _instance = new SRClientBase
                     {
-                        ClientGuid = Guid.NewGuid().ToString(),
+                        ClientGuid = ShortGuid.NewGuid(),
                         Gateway = true,
                         LineOfSightLoss = 0.0f,
                         Name = "RecordingClient_" + Environment.MachineName,
@@ -30,7 +31,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
         {
             _instance = new SRClientBase
             {
-                ClientGuid = string.IsNullOrEmpty(clientGuid) ? Guid.NewGuid().ToString() : clientGuid,
+                ClientGuid = string.IsNullOrEmpty(clientGuid) ? ShortGuid.NewGuid() : clientGuid,
                 Gateway = true,
                 LineOfSightLoss = 0.0f,
                 Name = string.IsNullOrEmpty(name) ? ("RecordingClient_" + Environment.MachineName) : name,

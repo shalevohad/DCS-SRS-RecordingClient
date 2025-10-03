@@ -13,7 +13,7 @@
             string serverIp = args.Length > 0 ? args[0] : settings.GetRecorderSettingString(RecorderSettingKeys.ServerIp);
             int port = args.Length > 1 ? int.Parse(args[1]) : settings.GetRecorderSettingInt(RecorderSettingKeys.ServerPort);
 
-            string clientGuid = Guid.NewGuid().ToString();
+            string clientGuid = ShortGuid.NewGuid();
             string clientName = "RecordingClient_" + clientGuid;
             RecordingClientState.Initialize(clientGuid, clientName);
 
