@@ -251,29 +251,6 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
             }
         }
 
-        public async Task ConnectAsync(
-            string? serverIp = null,
-            int? tcpPort = null,
-            int? udpPort = null)
-        {
-            var settings = RecorderSettingsStore.Instance;
-            var state = RecordingClientState.Instance;
-            _clientGuid = state.ClientGuid;
-
-            string ip = serverIp ?? settings.GetRecorderSettingString(RecorderSettingKeys.ServerIp);
-            int tcp = tcpPort ?? settings.GetRecorderSettingInt(RecorderSettingKeys.TcpPort);
-            int udp = udpPort ?? settings.GetRecorderSettingInt(RecorderSettingKeys.UdpPort);
-
-            _serverUdpEndpoint = new IPEndPoint(IPAddress.Parse(ip), udp);
-
-            // Subscribe to EventBus for SRSTCPClientStatusMessage events
-            EventBus.Instance.SubscribeOnPublishedThread(this);
-
-            var tcpEndpoint = new IPEndPoint(IPAddress.Parse(ip), tcp);
-            _tcpClientHandler = new TCPClientHandler(_clientGuid, state);
-            _tcpClientHandler.TryConnect(tcpEndpoint);
-        }
-
         private async Task WriterLoop(CancellationToken token)
         {
             while (_writerRunning && !token.IsCancellationRequested)
