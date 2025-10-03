@@ -12,8 +12,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
     public enum RecorderSettingKeys
     {
         ServerIp,
-        TcpPort,
-        UdpPort,
+        ServerPort,
         RecordingFile
     }
 
@@ -29,8 +28,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
         private readonly Dictionary<string, string> defaultRecorderSettings = new()
         {
             { RecorderSettingKeys.ServerIp.ToString(), "127.0.0.1" },
-            { RecorderSettingKeys.TcpPort.ToString(), "5002" },
-            { RecorderSettingKeys.UdpPort.ToString(), "5010" },
+            { RecorderSettingKeys.ServerPort.ToString(), "5002" },
             { RecorderSettingKeys.RecordingFile.ToString(), "recorded_audio.raw" }
         };
 
@@ -77,8 +75,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
                     new Section("Recorder Settings")
                 };
                 SetRecorderSetting(RecorderSettingKeys.ServerIp, defaultRecorderSettings[RecorderSettingKeys.ServerIp.ToString()]);
-                SetRecorderSetting(RecorderSettingKeys.TcpPort, int.Parse(defaultRecorderSettings[RecorderSettingKeys.TcpPort.ToString()]));
-                SetRecorderSetting(RecorderSettingKeys.UdpPort, int.Parse(defaultRecorderSettings[RecorderSettingKeys.UdpPort.ToString()]));
+                SetRecorderSetting(RecorderSettingKeys.ServerPort, int.Parse(defaultRecorderSettings[RecorderSettingKeys.ServerPort.ToString()]));
                 SetRecorderSetting(RecorderSettingKeys.RecordingFile, defaultRecorderSettings[RecorderSettingKeys.RecordingFile.ToString()]);
                 Save();
             }
@@ -99,8 +96,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
                     new Section("Recorder Settings")
                 };
                 SetRecorderSetting(RecorderSettingKeys.ServerIp, defaultRecorderSettings[RecorderSettingKeys.ServerIp.ToString()]);
-                SetRecorderSetting(RecorderSettingKeys.TcpPort, int.Parse(defaultRecorderSettings[RecorderSettingKeys.TcpPort.ToString()]));
-                SetRecorderSetting(RecorderSettingKeys.UdpPort, int.Parse(defaultRecorderSettings[RecorderSettingKeys.UdpPort.ToString()]));
+                SetRecorderSetting(RecorderSettingKeys.ServerPort, int.Parse(defaultRecorderSettings[RecorderSettingKeys.ServerPort.ToString()]));
                 SetRecorderSetting(RecorderSettingKeys.RecordingFile, defaultRecorderSettings[RecorderSettingKeys.RecordingFile.ToString()]);
                 Save();
             }

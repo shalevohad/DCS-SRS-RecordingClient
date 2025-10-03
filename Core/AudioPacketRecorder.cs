@@ -18,7 +18,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
         private CancellationTokenSource? _recordingCts;
         private string? _outputFile;
         private string? _clientGuid;
-        private IPEndPoint? _serverUdpEndpoint;
+        private IPEndPoint? _serverEndpoint;
         private static readonly Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
         private int _sampleRate = Constants.OUTPUT_SAMPLE_RATE; // Usually 48000
@@ -36,7 +36,35 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
         /// Uses RecorderSettingsStore for default values if parameters are not provided.
         /// Uses RecordingClientState.Instance for client state and GUID.
         /// </summary>
+        public async Task ConnectAsync(
+            string? serverIp = null,
+            int? port = null) // Only one port parameter
+        {
+            var settings = RecorderSettingsStore.Instance;
+            var state = RecordingClientState.Instance;
+            _clientGuid = state.ClientGuid;
 
+            string ip = serverIp ?? settings.GetRecorderSettingString(RecorderSettingKeys.ServerIp);
+            int unifiedPort = port ?? settings.GetRecorderSettingInt(RecorderSettingKeys.ServerPort); // Use TCP port setting for both
+
+            _serverEndpoint = new IPEndPoint(IPAddress.Parse(ip), unifiedPort);
+            _tcpClientHandler = new TCPClientHandler(_clientGuid, state);
+            _tcpClientHandler.TryConnect(_serverEndpoint);
+
+            // Use SRS/Common UDPVoiceHandler for handshake and periodic pings
+            if (_udpVoiceHandler == null)
+            {
+                _udpVoiceHandler = new UDPVoiceHandler(_clientGuid, _serverEndpoint);
+                _udpVoiceHandler.Connect();
+            }
+
+            // Subscribe to EventBus for SRSTCPClientStatusMessage events
+            EventBus.Instance.SubscribeOnPublishedThread(this);
+        }
+
+        /// <summary>
+        /// Disconnects from the SRS server and stops all activities.
+        /// </summary>
         public void Disconnect()
         {
             Logger.Info("Disconnecting from SRS server.");
@@ -214,9 +242,9 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
             else
             {
                 // Connected: start UDP if not already started
-                if (_udpVoiceHandler == null && _serverUdpEndpoint != null)
+                if (_udpVoiceHandler == null && _serverEndpoint != null)
                 {
-                    _udpVoiceHandler = new UDPVoiceHandler(_clientGuid, _serverUdpEndpoint);
+                    _udpVoiceHandler = new UDPVoiceHandler(_clientGuid, _serverEndpoint);
                     _udpVoiceHandler.Connect();
                 }
                 ConnectionStatusChanged?.Invoke(status);

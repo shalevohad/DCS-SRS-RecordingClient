@@ -11,8 +11,7 @@
             var settings = RecorderSettingsStore.Instance;
 
             string serverIp = args.Length > 0 ? args[0] : settings.GetRecorderSettingString(RecorderSettingKeys.ServerIp);
-            int tcpPort = args.Length > 1 ? int.Parse(args[1]) : settings.GetRecorderSettingInt(RecorderSettingKeys.TcpPort);
-            int udpPort = args.Length > 2 ? int.Parse(args[2]) : settings.GetRecorderSettingInt(RecorderSettingKeys.UdpPort);
+            int port = args.Length > 1 ? int.Parse(args[1]) : settings.GetRecorderSettingInt(RecorderSettingKeys.ServerPort);
 
             string clientGuid = Guid.NewGuid().ToString();
             string clientName = "RecordingClient_" + clientGuid;
@@ -56,8 +55,8 @@
             while (true)
             {
                 Console.WriteLine("\n-----------------------------------------------------");
-                Console.WriteLine($"Trying to connect to server at {serverIp} (TCP:{tcpPort}, UDP:{udpPort})...");
-                await recorder.ConnectAsync(serverIp, tcpPort, udpPort);
+                Console.WriteLine($"Trying to connect to server at {serverIp} (Port:{port})...");
+                await recorder.ConnectAsync(serverIp, port);
 
                 // Wait a moment for the connection status to update
                 int waitMs = 0;
