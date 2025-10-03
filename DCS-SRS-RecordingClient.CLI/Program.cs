@@ -73,7 +73,7 @@
                     Console.WriteLine($"Recording to file: '{recordingFile}'...");
                     Console.WriteLine("to stop recording and disconnect: press Ctrl+C or close the window");
                     Console.WriteLine("-----------------------------------------------------");
-                    Console.WriteLine("\nListening for incoming packets to record...");
+                    Console.WriteLine("\nListening for incoming packets to record:");
 
                     recorder.PacketReceived += meta =>
                     {
