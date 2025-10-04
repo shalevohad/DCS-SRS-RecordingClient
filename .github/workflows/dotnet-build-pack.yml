@@ -51,7 +51,7 @@ jobs:
     - name: Run publish.ps1 with the detected version
       shell: pwsh
       run: |
-        ./publish.ps1 -Version "${{ steps.get_version.outputs.version }}"
+        ./publish.ps1 -Version "${{ steps.get_version.outputs.version }}" -NoSign
 
     - name: Upload ZIP artifact
       uses: actions/upload-artifact@v4
