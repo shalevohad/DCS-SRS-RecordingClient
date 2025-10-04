@@ -43,7 +43,7 @@ jobs:
         } else {
           $ver = "unknown"
         }
-        echo "version=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+        "version=$ver" >> $env:GITHUB_OUTPUT
 
     - name: Publish (if applicable)
       run: dotnet publish -c Release -o ./publish
