@@ -29,11 +29,12 @@ jobs:
     - name: Build the project
       run: dotnet build --configuration Release --no-restore
 
-    - name: Get VERSION from core/constans.cs
+    # Only the relevant section shown for brevity
+    - name: Get VERSION from core/constants.cs
       id: get_version
       shell: pwsh
       run: |
-        $content = Get-Content core/constans.cs
+        $content = Get-Content Core/Constants.cs
         $versionLine = $content | Where-Object { $_ -match 'VERSION\s*=\s*"(.*?)"' }
         if ($versionLine -match 'VERSION\s*=\s*"(?<ver>[\d\.]+)"') {
           $ver = $Matches['ver']
