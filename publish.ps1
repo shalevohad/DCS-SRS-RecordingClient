@@ -1,7 +1,7 @@
 param(
     [switch]$NoSign,
-    [switch]$Zip
-    [string]$Version = "0",
+    [switch]$Zip,
+    [string]$Version = "0"
 )
 
 $MSBuildExe="msbuild"
