@@ -29,8 +29,7 @@ jobs:
     - name: Build the project
       run: dotnet build --configuration Release --no-restore
 
-    # Only the relevant section shown for brevity
-    - name: Get VERSION from core/constants.cs
+    - name: Get VERSION from Core/Constants.cs
       id: get_version
       shell: pwsh
       run: |
@@ -46,11 +45,10 @@ jobs:
     - name: Publish (if applicable)
       run: dotnet publish -c Release -o ./publish
 
-    - name: Pack all necessary files into a ZIP
+    - name: Run publish.ps1
       shell: pwsh
       run: |
-        $zipName = "DCS-SRS-RecordingClient-${{ steps.get_version.outputs.version }}.zip"
-        Compress-Archive -Path ./publish/* -DestinationPath $zipName
+        ./publish.ps1 -Version "${{ steps.get_version.outputs.version }}"
 
     - name: Upload ZIP artifact
       uses: actions/upload-artifact@v4
