@@ -1,6 +1,7 @@
 param(
     [switch]$NoSign,
     [switch]$Zip
+    [string]$Version = "0",
 )
 
 $MSBuildExe="msbuild"
@@ -180,8 +181,7 @@ if(!$Zip){
 Write-Host "Removing old zip files from '$outputPath'..." -ForegroundColor Yellow
 Remove-Item -Path "$outputPath\*.zip" -ErrorAction SilentlyContinue
 
-
-$zipFileName = "DCS-SRS-RecordingClient.zip"
+$zipFileName = "DCS-SRS-RecordingClient-$Version.zip"
 $zipFilePath = Join-Path -Path (Get-Item -Path $outputPath).FullName -ChildPath $zipFileName
 
 
