@@ -29,18 +29,27 @@ jobs:
     - name: Build the project
       run: dotnet build --configuration Release --no-restore
 
-    - name: Get project version
+    - name: Get VERSION from core/constans.cs
       id: get_version
+      shell: pwsh
       run: |
-        ver=$(dotnet msbuild -nologo -t:GetAssemblyVersion -v:quiet | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+')
-        echo "version=$ver" >> $GITHUB_OUTPUT
+        $content = Get-Content core/constans.cs
+        $versionLine = $content | Where-Object { $_ -match 'VERSION\s*=\s*"(.*?)"' }
+        if ($versionLine -match 'VERSION\s*=\s*"(?<ver>[\d\.]+)"') {
+          $ver = $Matches['ver']
+        } else {
+          $ver = "unknown"
+        }
+        echo "version=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
     - name: Publish (if applicable)
       run: dotnet publish -c Release -o ./publish
 
     - name: Pack all necessary files into a ZIP
+      shell: pwsh
       run: |
-        powershell Compress-Archive -Path ./publish/* -DestinationPath DCS-SRS-RecordingClient-${{ steps.get_version.outputs.version }}.zip
+        $zipName = "DCS-SRS-RecordingClient-${{ steps.get_version.outputs.version }}.zip"
+        Compress-Archive -Path ./publish/* -DestinationPath $zipName
 
     - name: Upload ZIP artifact
       uses: actions/upload-artifact@v4
