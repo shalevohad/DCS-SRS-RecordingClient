@@ -9,7 +9,7 @@ if ($null -eq (Get-Command $MSBuildExe -ErrorAction SilentlyContinue)) {
     Write-Warning "MSBuild not in path, using $MSBuildExe"
     
     if ($null -eq (Get-Command $MSBuildExe -ErrorAction SilentlyContinue)) {
-        Writer-Error "Cannot find MSBuild (aborting)"
+        Write-Error "Cannot find MSBuild (aborting)"
         exit 1
     }
 }

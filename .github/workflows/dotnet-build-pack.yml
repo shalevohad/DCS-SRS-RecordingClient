@@ -1,0 +1,60 @@
+name: Build & Package .NET
+
+on:
+  push:
+    branches:
+      - '**'
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    steps:
+    - name: Checkout repository (with submodules)
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Initialize and update submodules (redundant but safe)
+      run: git submodule update --init --recursive
+
+    - name: Setup .NET 9.0 SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '9.0.x'
+
+    - name: Setup MSBuild.exe
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Restore NuGet packages
+      run: dotnet restore
+
+    - name: Build the project
+      run: dotnet build --configuration Release --no-restore
+
+    - name: Get VERSION from Core/Constants.cs
+      id: get_version
+      shell: pwsh
+      run: |
+        $content = Get-Content Core/Constants.cs
+        $versionLine = $content | Where-Object { $_ -match 'VERSION\s*=\s*"(.*?)"' }
+        if ($versionLine -match 'VERSION\s*=\s*"(?<ver>[\d\.]+)"') {
+          $ver = $Matches['ver']
+        } else {
+          $ver = "unknown"
+        }
+        echo "version=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+    - name: Publish (if applicable)
+      run: dotnet publish -c Release -o ./publish
+
+    - name: Run publish.ps1 with the detected version
+      shell: pwsh
+      run: |
+        ./publish.ps1 -Version "${{ steps.get_version.outputs.version }}" -NoSign -Zip
+
+    - name: Upload ZIP artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-zip
+        path: DCS-SRS-RecordingClient-*.zip
