@@ -45,7 +45,7 @@ jobs:
     - name: Publish (if applicable)
       run: dotnet publish -c Release -o ./publish
 
-    - name: Run publish.ps1
+    - name: Run publish.ps1 with the detected version
       shell: pwsh
       run: |
         ./publish.ps1 -Version "${{ steps.get_version.outputs.version }}"
