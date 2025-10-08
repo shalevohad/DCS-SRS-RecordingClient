@@ -6,6 +6,7 @@
     <RootNamespace>DCS_SRS_RecordingClient.CLI</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <Platforms>x64</Platforms>
   </PropertyGroup>
 
   <ItemGroup>
