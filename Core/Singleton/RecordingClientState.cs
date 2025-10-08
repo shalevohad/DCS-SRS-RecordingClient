@@ -1,12 +1,14 @@
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Models;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player;
+using NLog;
 using System;
 
 namespace ShalevOhad.DCS.SRS.Recorder.Core
 {
     public static class RecordingClientState
     {
-        private static SRClientBase _instance;
+        private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
+        private static SRClientBase? _instance;
 
         public static SRClientBase Instance
         {
@@ -14,20 +16,14 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
             {
                 if (_instance == null)
                 {
-                    _instance = new SRClientBase
-                    {
-                        ClientGuid = ShortGuid.NewGuid(),
-                        Gateway = true,
-                        LineOfSightLoss = 0.0f,
-                        Name = "RecordingClient_" + Environment.MachineName,
-                    };
+                    _instance = Initialize();
                 }
                 return _instance;
             }
         }
 
         //allow re-initialization if needed
-        public static void Initialize(string clientGuid = "", string name = "")
+        public static SRClientBase Initialize(string clientGuid = "", string name = "")
         {
             _instance = new SRClientBase
             {
@@ -36,6 +32,9 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
                 LineOfSightLoss = 0.0f,
                 Name = string.IsNullOrEmpty(name) ? ("RecordingClient_" + Environment.MachineName) : name,
             };
+            Logger.Info($"RecordingClientState re-initialized with GUID {_instance.ClientGuid} and name {_instance.Name}");
+
+            return _instance;
         }
     }
 }
