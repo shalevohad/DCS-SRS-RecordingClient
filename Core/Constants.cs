@@ -10,6 +10,6 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
         /// <summary>
         /// The minimum required SRS server version for compatibility.
         /// </summary>
-        public const string MINIMUM_SERVER_VERSION = "2.3.2.0";
+        public const string MINIMUM_SERVER_VERSION = "2.3.2.1";
     }
 }

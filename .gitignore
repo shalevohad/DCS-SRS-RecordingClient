@@ -361,3 +361,4 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+/DCS-SRS-RecordingClient.CLI/Properties/launchSettings.json
