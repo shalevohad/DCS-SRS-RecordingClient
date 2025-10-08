@@ -7,11 +7,14 @@ using System.Net;
 using System.Collections.Concurrent;
 using SRSTCPClientStatusMessage = Ciribob.DCS.SimpleRadio.Standalone.Common.Models.EventMessages.TCPClientStatusMessage;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player;
+using Ciribob.DCS.SimpleRadio.Standalone.Common.Models;
 
 namespace ShalevOhad.DCS.SRS.Recorder.Core
 {
-    public class AudioPacketRecorder : IHandle<SRSTCPClientStatusMessage>
+    public class AudioPacketRecorder : IHandle<SRSTCPClientStatusMessage>, IHandle<NetworkMessage>
     {
+        private static readonly Logger Logger = NLog.LogManager.GetCurrentClassLogger();
+
         private TCPClientHandler? _tcpClientHandler;
         private UDPVoiceHandler? _udpVoiceHandler;
         private FileStream? _fileStream;
@@ -19,8 +22,6 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
         private string? _outputFile;
         private string? _clientGuid;
         private IPEndPoint? _serverEndpoint;
-        private static readonly Logger Logger = NLog.LogManager.GetCurrentClassLogger();
-
         private int _sampleRate = Ciribob.DCS.SimpleRadio.Standalone.Common.Constants.OUTPUT_SAMPLE_RATE; // Usually 48000
         private int _channelCount = 1; // Mono (default for SRS voice)
 
@@ -29,7 +30,12 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
         private readonly object _fileWriteLock = new();
         private bool _writerRunning = false;
 
+        // Add this field to track if we've checked the version
+        private bool _serverVersionChecked = false;
+
         public bool IsConnected => _tcpClientHandler?.TCPConnected ?? false;
+
+        public string? ServerVersion { get; private set; }
 
         /// <summary>
         /// Connects to the SRS server using TCP for control and UDP for audio.
@@ -40,26 +46,38 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
             string? serverIp = null,
             int? port = null) // Only one port parameter
         {
+            Logger.Info("Initializing connection to SRS server...");
             var settings = RecorderSettingsStore.Instance;
             var state = RecordingClientState.Instance;
             _clientGuid = state.ClientGuid;
 
             string ip = serverIp ?? settings.GetRecorderSettingString(RecorderSettingKeys.ServerIp);
-            int unifiedPort = port ?? settings.GetRecorderSettingInt(RecorderSettingKeys.ServerPort); // Use TCP port setting for both
+            int unifiedPort = port ?? settings.GetRecorderSettingInt(RecorderSettingKeys.ServerPort);
 
-            _serverEndpoint = new IPEndPoint(IPAddress.Parse(ip), unifiedPort);
-            _tcpClientHandler = new TCPClientHandler(_clientGuid, state);
-            _tcpClientHandler.TryConnect(_serverEndpoint);
+            Logger.Info($"Connecting to {ip}:{unifiedPort} with client GUID {state.ClientGuid}");
 
-            // Use SRS/Common UDPVoiceHandler for handshake and periodic pings
-            if (_udpVoiceHandler == null)
+            try
             {
-                _udpVoiceHandler = new UDPVoiceHandler(_clientGuid, _serverEndpoint);
-                _udpVoiceHandler.Connect();
-            }
+                _serverEndpoint = new IPEndPoint(IPAddress.Parse(ip), unifiedPort);
+                _tcpClientHandler = new TCPClientHandler(_clientGuid, state);
+                _tcpClientHandler.TryConnect(_serverEndpoint);
 
-            // Subscribe to EventBus for SRSTCPClientStatusMessage events
-            EventBus.Instance.SubscribeOnPublishedThread(this);
+                if (_udpVoiceHandler == null)
+                {
+                    _udpVoiceHandler = new UDPVoiceHandler(_clientGuid, _serverEndpoint);
+                    _udpVoiceHandler.Connect();
+                    Logger.Info("UDPVoiceHandler initialized and connected.");
+                }
+
+                // Subscribe to EventBus for SRSTCPClientStatusMessage events
+                EventBus.Instance.SubscribeOnPublishedThread(this);
+                Logger.Info("Subscribed to EventBus for status messages.");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Failed to connect to SRS server.");
+                throw;
+            }
         }
 
         /// <summary>
@@ -73,7 +91,8 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
             StopRecording();
             _udpVoiceHandler?.RequestStop();
             _udpVoiceHandler = null;
-            EventBus.Instance.Unsubcribe(this);
+            EventBus.Instance.Unsubscribe(this);
+            Logger.Info("Disconnected and cleaned up resources.");
 
             ConnectionStatusChanged?.Invoke(
                 new SRSTCPClientStatusMessage(
@@ -89,26 +108,41 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
         /// </summary>
         public void StartRecording(string? filePath = null)
         {
-            // Prevent starting if already recording
             if (_recordingCts != null && !_recordingCts.IsCancellationRequested)
+            {
+                Logger.Warn("Attempted to start recording, but recording is already in progress.");
                 return;
+            }
 
             if (_udpVoiceHandler == null)
+            {
+                Logger.Error("UDPVoiceHandler not initialized. Cannot start recording.");
                 throw new InvalidOperationException("UDPVoiceHandler not initialized.");
+            }
 
             var settings = RecorderSettingsStore.Instance;
             _outputFile = filePath ?? settings.GetRecorderSettingString(RecorderSettingKeys.RecordingFile);
-            _fileStream = new FileStream(_outputFile, FileMode.Create, FileAccess.Write);
-            _recordingCts = new CancellationTokenSource();
+            Logger.Info($"Starting recording to file: {_outputFile}");
 
-            _writerRunning = true;
-            _writerTask = Task.Run(() => WriterLoop(_recordingCts.Token));
+            try
+            {
+                _fileStream = new FileStream(_outputFile, FileMode.Create, FileAccess.Write);
+                _recordingCts = new CancellationTokenSource();
 
-            Task.Run(() => RecordingLoop(_recordingCts.Token));
+                _writerRunning = true;
+                _writerTask = Task.Run(() => WriterLoop(_recordingCts.Token));
+                Task.Run(() => RecordingLoop(_recordingCts.Token));
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Failed to start recording.");
+                throw;
+            }
         }
 
         public void StopRecording()
         {
+            Logger.Info("Stopping recording...");
             _recordingCts?.Cancel();
             _writerRunning = false;
             try
@@ -128,12 +162,16 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
             }
             _fileStream?.Dispose();
             _fileStream = null;
+            Logger.Info("Recording stopped and file stream disposed.");
         }
 
         private async Task RecordingLoop(CancellationToken token)
         {
             if (_udpVoiceHandler == null)
+            {
+                Logger.Warn("RecordingLoop called but UDPVoiceHandler is null.");
                 return;
+            }
 
             // EncodedAudio is a BlockingCollection<byte[]> containing received UDP packets
             while (!token.IsCancellationRequested)
@@ -147,6 +185,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
                         if (packet != null && packet.Length > 0)
                         {
                             var meta = ExtractAudioMetadata(packet);
+                            Logger.Debug($"Audio packet received: Freq={meta.Frequency}, TxGuid={meta.TransmitterGuid}, Size={meta.AudioPayload.Length}");
                             // Notify listeners (CLI) about the received packet
                             PacketReceived?.Invoke(meta);
                             _writeQueue.Enqueue(meta);
@@ -168,6 +207,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
                     Logger.Error(ex, "Unexpected error during audio packet reception.");
                 }
             }
+            Logger.Info("RecordingLoop stopped.");
         }
 
         // Extract metadata from UDP packet
@@ -262,7 +302,8 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
                         lock (_fileWriteLock)
                         {
                             using var bw = new BinaryWriter(_fileStream!, System.Text.Encoding.UTF8, leaveOpen: true);
-                            meta.TryWriteMetadata(bw);
+                            if (!meta.TryWriteMetadata(bw))
+                                Logger.Warn("Failed to write audio packet metadata.");
                         }
                     }
                     catch (Exception ex)
@@ -274,6 +315,58 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
                 {
                     await Task.Delay(10, token); // Avoid busy wait
                 }
+            }
+            Logger.Info("WriterLoop stopped.");
+        }
+
+        // Add this method to handle sync messages
+        private void HandleSyncMessage(NetworkMessage networkMessage)
+        {
+            if (_serverVersionChecked)
+                return; // Only check once at first connection
+
+            _serverVersionChecked = true;
+
+            //string serverVersion = networkMessage.Version ?? networkMessage.ServerSettings?["Version"];
+            //ServerVersion = serverVersion;
+            ServerVersion = networkMessage.Version ?? networkMessage.ServerSettings?["Version"];
+
+            if (string.IsNullOrEmpty(ServerVersion))
+            {
+                Logger.Warn("Server version not found in sync message.");
+                return;
+            }
+
+            if (IsVersionLower(ServerVersion, Constants.MINIMUM_SERVER_VERSION))
+            {
+                Logger.Error($"Server version {ServerVersion} is lower than required {Constants.MINIMUM_SERVER_VERSION}. Disconnecting.");
+                ConnectionStatusChanged?.Invoke(
+                    new SRSTCPClientStatusMessage(
+                        false,
+                        SRSTCPClientStatusMessage.ErrorCode.MISMATCHED_SERVER
+                    )
+                );
+                Disconnect();
+            }
+        }
+
+        // Utility method to compare semantic versions
+        private static bool IsVersionLower(string serverVersion, string minVersion)
+        {
+            Version serverVer, minVer;
+            if (Version.TryParse(serverVersion, out serverVer) && Version.TryParse(minVersion, out minVer))
+            {
+                return serverVer < minVer;
+            }
+            return false; // If parsing fails, don't block connection
+        }
+
+        // Implement the handler for NetworkMessage
+        public async Task HandleAsync(NetworkMessage message, CancellationToken cancellationToken)
+        {
+            if (message.MsgType == NetworkMessage.MessageType.SYNC)
+            {
+                HandleSyncMessage(message);
             }
         }
     }

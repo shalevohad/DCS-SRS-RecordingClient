@@ -41,11 +41,12 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
                     writer.Write(AudioPayload);
 
                 writer.Write(Coalition);
+                //Logger.Debug($"AudioPacketMetadata written: Freq={Frequency}, TxGuid={TransmitterGuid}, Size={AudioPayload?.Length ?? 0}");
                 return true;
             }
             catch (Exception ex)
             {
-                Logger.Error(ex, "Error during AudioPacketMetadata serialization.");
+                //Logger.Error(ex, "Error during AudioPacketMetadata serialization.");
                 return false;
             }
         }
@@ -82,16 +83,17 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
                     coalition,
                     audioPayload
                 );
+                //Logger.Debug($"AudioPacketMetadata read: Freq={frequency}, TxGuid={transmitterGuid}, Size={audioPayload.Length}");
                 return true;
             }
             catch (EndOfStreamException ex)
             {
-                Logger.Warn(ex, "Reached end of stream during AudioPacketMetadata deserialization.");
+                //Logger.Warn(ex, "Reached end of stream during AudioPacketMetadata deserialization.");
                 return false;
             }
             catch (Exception ex)
             {
-                Logger.Error(ex, "Error during AudioPacketMetadata deserialization.");
+               // Logger.Error(ex, "Error during AudioPacketMetadata deserialization.");
                 return false;
             }
         }

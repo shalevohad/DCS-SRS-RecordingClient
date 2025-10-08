@@ -18,12 +18,12 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
 
     public class RecorderSettingsStore
     {
+        private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
         private static readonly string CFG_FILE_NAME = "recorder.cfg";
         private static readonly object _lock = new();
         private static RecorderSettingsStore _instance;
         private readonly Configuration _configuration;
         private readonly ConcurrentDictionary<string, object> _settingsCache = new();
-        private readonly Logger Logger = LogManager.GetCurrentClassLogger();
 
         private readonly Dictionary<string, string> defaultRecorderSettings = new()
         {
@@ -61,11 +61,13 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
                 var count = 0;
                 while (IsFileLocked(new FileInfo(Path + ConfigFileName)) && count < 10)
                 {
+                    Logger.Warn($"Config file {Path + ConfigFileName} is locked. Waiting...");
                     Thread.Sleep(200);
                     count++;
                 }
 
                 _configuration = Configuration.LoadFromFile(Path + ConfigFileName);
+                Logger.Info($"Loaded recorder config from {Path + ConfigFileName}");
             }
             catch (FileNotFoundException)
             {
@@ -85,6 +87,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
                 try
                 {
                     File.Copy(Path + ConfigFileName, Path + ConfigFileName + ".bak", true);
+                    Logger.Info($"Backup of corrupted config file created at {Path + ConfigFileName}.bak");
                 }
                 catch (Exception e)
                 {
@@ -229,10 +232,11 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
                 try
                 {
                     _configuration.SaveToFile(Path + ConfigFileName);
+                    Logger.Info($"Recorder settings saved to {Path + ConfigFileName}");
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    Logger.Error("Unable to save recorder settings!");
+                    Logger.Error(ex, "Unable to save recorder settings!");
                 }
             }
         }
