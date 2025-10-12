@@ -210,7 +210,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
             Logger.Info("RecordingLoop stopped.");
         }
 
-        // Extract metadata from UDP packet
+        // Extract metadata from UDP packet with comprehensive player information
         private AudioPacketMetadata ExtractAudioMetadata(byte[] packet)
         {
             int offset = 0;
@@ -230,22 +230,81 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
             ulong packetId = BitConverter.ToUInt64(packet, offset); offset += 8;
             byte hopCount = packet[offset]; offset += 1;
 
-            string transmitterGuid = System.Text.Encoding.ASCII.GetString(packet, offset, 22); offset += 22;
+            string transmitterGuid = System.Text.Encoding.ASCII.GetString(packet, offset, 22).TrimEnd('\0'); offset += 22;
 
             int coalition = BitConverter.ToInt32(packet, offset); offset += 4;
 
-            // Check if the client allows recording
-            bool allowRecord = true;
-            var clients = ConnectedClientsSingleton.Instance;
-            var client = clients.TryGetValue(transmitterGuid, out var foundClient) ? foundClient : null;
-            if (client != null && client is SRClientBase srClient)
+            // Create comprehensive player information
+            var playerInfo = new PlayerInfo
             {
-                allowRecord = srClient.AllowRecord;
+                TransmitterGuid = transmitterGuid,
+                Coalition = coalition,
+                Name = transmitterGuid, // Default fallback
+                Seat = -1,
+                AllowRecord = true,
+                Position = new Position(),
+                AircraftInfo = new AircraftInfo()
+            };
+
+            // Look up comprehensive player data from connected clients
+            var clients = ConnectedClientsSingleton.Instance;
+            if (clients.TryGetValue(transmitterGuid, out var foundClient) && foundClient != null)
+            {
+                Logger.Debug($"Found client info for GUID {transmitterGuid}: Name='{foundClient.Name}', Coalition={foundClient.Coalition}");
+                
+                // Extract all available player information
+                playerInfo.Name = !string.IsNullOrEmpty(foundClient.Name) ? foundClient.Name : transmitterGuid;
+                playerInfo.Coalition = foundClient.Coalition;
+                playerInfo.Seat = foundClient.Seat;
+                playerInfo.AllowRecord = foundClient.AllowRecord;
+
+                // Extract position information
+                if (foundClient.LatLngPosition != null)
+                {
+                    playerInfo.Position = new Position
+                    {
+                        Latitude = foundClient.LatLngPosition.lat,
+                        Longitude = foundClient.LatLngPosition.lng,
+                        Altitude = foundClient.LatLngPosition.alt
+                    };
+                }
+
+                // Extract aircraft/unit information
+                if (foundClient.RadioInfo != null)
+                {
+                    playerInfo.AircraftInfo = new AircraftInfo
+                    {
+                        UnitType = foundClient.RadioInfo.unit ?? string.Empty,
+                        UnitId = foundClient.RadioInfo.unitId
+                    };
+                }
+
+                // Only add audioPayload if recording is allowed
+                byte[] payloadToWrite = foundClient.AllowRecord ? audioPayload : Array.Empty<byte>();
+
+                Logger.Debug($"Created player info: Name='{playerInfo.Name}', DisplayName='{playerInfo.GetDisplayName()}'");
+
+                return new AudioPacketMetadata(
+                    DateTime.UtcNow,
+                    frequency,
+                    modulation,
+                    encryption,
+                    transmitterUnitId,
+                    packetId,
+                    transmitterGuid,
+                    playerInfo,
+                    _sampleRate,
+                    _channelCount,
+                    coalition,
+                    payloadToWrite
+                );
+            }
+            else
+            {
+                Logger.Debug($"Client not found for GUID {transmitterGuid}, using GUID as fallback name");
             }
 
-            // Only add audioPayload if allowed
-            byte[] payloadToWrite = allowRecord ? audioPayload : Array.Empty<byte>();
-
+            // Fallback if client not found - still record but with minimal info
             return new AudioPacketMetadata(
                 DateTime.UtcNow,
                 frequency,
@@ -254,10 +313,11 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
                 transmitterUnitId,
                 packetId,
                 transmitterGuid,
+                playerInfo,
                 _sampleRate,
                 _channelCount,
                 coalition,
-                payloadToWrite
+                audioPayload // Allow recording even if client not found
             );
         }
 

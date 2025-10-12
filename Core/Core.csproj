@@ -8,7 +8,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+    <PackageReference Include="NLog" Version="6.0.0" />
+    <PackageReference Include="sharpconfig" Version="3.2.9.1" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\External\SRS\Common\Common.csproj" />
+    <ProjectReference Include="..\External\SRS\SharedAudio\SharedAudio.csproj" />
   </ItemGroup>
 
 </Project>

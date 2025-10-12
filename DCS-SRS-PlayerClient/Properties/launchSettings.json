@@ -1,0 +1,15 @@
+{
+  "profiles": {
+    "DCS-SRS-PlayerClient": {
+      "commandName": "Project",
+      "workingDirectory": "$(ProjectDir)"
+    },
+    "DCS-SRS-PlayerClient (Debug)": {
+      "commandName": "Project",
+      "workingDirectory": "$(ProjectDir)",
+      "environmentVariables": {
+        "DOTNET_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}
