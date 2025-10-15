@@ -3,6 +3,9 @@ using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Opus.Core;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player;
 using NLog;
 using ShalevOhad.DCS.SRS.Recorder.Core.Models;
+using ShalevOhad.DCS.SRS.Recorder.Core.Helpers;
+using System;
+using System.Linq;
 
 namespace ShalevOhad.DCS.SRS.Recorder.Core.Audio
 {
@@ -24,75 +27,83 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core.Audio
         public void SetMasterVolume(float volume)
         {
             _masterVolume = Math.Clamp(volume, 0.0f, Constants.MAX_VOLUME);
-            Logger.Info($"Master volume set to {_masterVolume:F2}");
+            Logger.Debug($"Master volume set to {_masterVolume:F2}");
+        }
+
+        /// <summary>
+        /// Decode packet and resample to internal output sample rate. Does NOT apply volume/effects.
+        /// </summary>
+        public float[] DecodePacketToFloat(AudioPacketMetadata packet)
+        {
+            try
+            {
+                if (packet.AudioPayload == null || packet.AudioPayload.Length == 0)
+                {
+                    Logger.Debug($"Empty payload for packet from {packet.TransmitterGuid}");
+                    return new float[Constants.OPUS_FRAME_SIZE];
+                }
+
+                var isOpus = ShalevOhad.DCS.SRS.Recorder.Core.Helpers.Helpers.IsOpusEncoded(packet);
+
+                float[] audioData;
+                if (isOpus)
+                {
+                    audioData = DecodeOpusAudio(packet);
+                }
+                else
+                {
+                audioData = ShalevOhad.DCS.SRS.Recorder.Core.Helpers.Helpers.ConvertPcm16ToFloat(packet.AudioPayload);
+                }
+
+                if (audioData == null || audioData.Length == 0)
+                {
+                    Logger.Debug($"No audio data after decoding packet from {packet.TransmitterGuid}");
+                    return new float[Constants.OPUS_FRAME_SIZE];
+                }
+
+                // Resample if needed (ensure output sample rate)
+                if (packet.SampleRate != Constants.OUTPUT_SAMPLE_RATE)
+                {
+                    audioData = ShalevOhad.DCS.SRS.Recorder.Core.Helpers.Helpers.ResampleAudio(audioData, packet.SampleRate, Constants.OUTPUT_SAMPLE_RATE);
+                }
+
+                return audioData;
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, $"Error decoding packet from {packet.TransmitterGuid}");
+                return new float[Constants.OPUS_FRAME_SIZE];
+            }
         }
 
         public float[] ProcessPacket(AudioPacketMetadata packet)
         {
             try
             {
-                Logger.Debug($"Processing packet from {packet.TransmitterGuid}: {packet.AudioPayload?.Length ?? 0} bytes");
-
-                // Validate input
-                if (packet.AudioPayload == null || packet.AudioPayload.Length == 0)
+                // Ensure transmitter has volume set (default 1.0 if not set)
+                if (!_transmitterVolumes.ContainsKey(packet.TransmitterGuid))
                 {
-                    Logger.Warn($"Packet from {packet.TransmitterGuid} has no audio payload");
-                    return new float[Constants.OPUS_FRAME_SIZE];
+                    _transmitterVolumes[packet.TransmitterGuid] = 1.0f;
                 }
 
-                // Decode audio
-                float[] audioData;
-                if (Helpers.IsOpusEncoded(packet))
-                {
-                    Logger.Debug($"Decoding OPUS audio from {packet.TransmitterGuid}");
-                    audioData = DecodeOpusAudio(packet);
-                }
-                else
-                {
-                    Logger.Debug($"Converting PCM audio from {packet.TransmitterGuid}");
-                    audioData = Helpers.ConvertPcm16ToFloat(packet.AudioPayload);
-                }
+                // Decode and resample to internal format
+                var audioData = DecodePacketToFloat(packet);
 
                 if (audioData == null || audioData.Length == 0)
                 {
-                    Logger.Warn($"No audio data after decoding packet from {packet.TransmitterGuid}");
+                    Logger.Debug($"No audio data after decoding packet from {packet.TransmitterGuid}");
                     return new float[Constants.OPUS_FRAME_SIZE];
                 }
 
-                // Calculate original amplitude for debugging
-                var originalMax = audioData.Length > 0 ? audioData.Max(Math.Abs) : 0f;
-
-                // Resample if needed
-                if (packet.SampleRate != Constants.OUTPUT_SAMPLE_RATE)
-                {
-                    Logger.Debug($"Resampling audio from {packet.SampleRate}Hz to {Constants.OUTPUT_SAMPLE_RATE}Hz");
-                    audioData = Helpers.ResampleAudio(audioData, packet.SampleRate, Constants.OUTPUT_SAMPLE_RATE);
-                }
-
-                // Apply volume control - IMPORTANT: Ensure this doesn't zero out audio
+                // Apply volume control
                 var effectiveVolume = GetEffectiveVolume(packet.TransmitterGuid);
                 if (effectiveVolume > 0)
                 {
                     ApplyVolumeControl(audioData, effectiveVolume);
                 }
-                else
-                {
-                    Logger.Warn($"Effective volume is {effectiveVolume} for {packet.TransmitterGuid} - audio will be silent");
-                }
 
-                // Apply basic audio effects (simplified)
+                // Apply basic audio effects (disabled for now)
                 ApplyBasicAudioEffects(audioData, packet);
-
-                // Log final amplitude for debugging
-                var finalMax = audioData.Length > 0 ? audioData.Max(Math.Abs) : 0f;
-                Logger.Debug($"Processed packet from {packet.TransmitterGuid}: {audioData.Length} samples, " +
-                           $"amplitude {originalMax:F4} -> {finalMax:F4}, volume: {effectiveVolume:F2}");
-
-                // Warn if audio is too quiet
-                if (finalMax > 0 && finalMax < 0.01f)
-                {
-                    Logger.Warn($"Processed audio amplitude very low ({finalMax:F4}) from {packet.TransmitterGuid} - may be inaudible");
-                }
 
                 return audioData;
             }
@@ -112,7 +123,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core.Audio
                 {
                     // Reset OPUS decoder state for seeking by decoding silence with reset flag
                     var silenceBuffer = new float[Constants.OPUS_FRAME_SIZE];
-                    decoder.DecodeFloat(null, silenceBuffer.AsMemory(), reset: true);
+                    decoder.DecodeFloat(null, silenceBuffer.AsMemory(), true);
                 }
                 catch (Exception ex)
                 {
@@ -130,9 +141,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core.Audio
                 const int expectedSamples = Constants.OUTPUT_SAMPLE_RATE * Constants.OPUS_FRAME_DURATION_MS / 1000;
                 var buffer = new float[expectedSamples];
 
-                int samplesDecoded = decoder.DecodeFloat(packet.AudioPayload, buffer.AsMemory());
-                
-                Logger.Debug($"OPUS decode result: {samplesDecoded} samples from {packet.AudioPayload.Length} bytes for {packet.TransmitterGuid}");
+                int samplesDecoded = decoder.DecodeFloat(packet.AudioPayload, buffer.AsMemory(), false);
 
                 if (samplesDecoded > 0)
                 {
@@ -141,15 +150,11 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core.Audio
                         Array.Resize(ref buffer, samplesDecoded);
                     }
                     
-                    // Log amplitude for debugging
-                    var maxAmplitude = buffer.Length > 0 ? buffer.Max(Math.Abs) : 0f;
-                    Logger.Debug($"OPUS decoded amplitude: {maxAmplitude:F4} for {packet.TransmitterGuid}");
-                    
                     return buffer;
                 }
                 else
                 {
-                    Logger.Warn($"OPUS decoder returned {samplesDecoded} samples for {packet.TransmitterGuid}");
+                    Logger.Debug($"OPUS decoder returned {samplesDecoded} samples for {packet.TransmitterGuid}");
                     return new float[expectedSamples];
                 }
             }
@@ -166,7 +171,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core.Audio
             if (!_opusDecoders.TryGetValue(transmitterGuid, out var decoder))
             {
                 decoder = OpusDecoder.Create(Constants.OUTPUT_SAMPLE_RATE, 1);
-                decoder.ForwardErrorCorrection = true;
+                decoder.ForwardErrorCorrection = false;
                 _opusDecoders[transmitterGuid] = decoder;
                 Logger.Debug($"Created OPUS decoder for {transmitterGuid}");
             }
@@ -183,7 +188,12 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core.Audio
             var transmitterVol = GetTransmitterVolume(transmitterGuid);
             var effective = transmitterVol * _masterVolume;
             
-            Logger.Trace($"Effective volume for {transmitterGuid}: {transmitterVol:F2} * {_masterVolume:F2} = {effective:F2}");
+            // Ensure we never return 0 volume unless intentionally set
+            if (effective <= 0.0f && _masterVolume > 0.0f && transmitterVol >= 0.0f)
+            {
+                effective = 1.0f;
+            }
+            
             return effective;
         }
 
@@ -208,6 +218,10 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core.Audio
 
         private void ApplyBasicAudioEffects(float[] audioData, AudioPacketMetadata packet)
         {
+            // Audio effects disabled for Opus-decoded voice to maintain clarity
+            return;
+            
+            /* DISABLED - These effects were causing "fax machine" sounds
             try
             {
                 // Apply basic effects based on modulation type
@@ -238,6 +252,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core.Audio
                 Logger.Error(ex, "Failed to apply audio effects");
                 // Continue without effects on error
             }
+            */
         }
 
         private void ApplyAmEffect(float[] audioData)

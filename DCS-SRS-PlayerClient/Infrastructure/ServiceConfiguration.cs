@@ -86,6 +86,10 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Infrastructure
             // This will be replaced with the actual service when the waveform control is created
             container.RegisterFactory<IWaveformService>(_ => new PlaceholderWaveformService());
 
+            // Enhanced UI services are now integrated directly into components
+            // These services would be implemented in future iterations if needed as separate services
+            // For now, the functionality is embedded in the components themselves
+
             Logger.Debug("Form-dependent services registered");
         }
 
@@ -96,7 +100,9 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Infrastructure
         {
             public bool IsUserSeeking => false;
 
-        public Task ApplyFrequencyFilterAsync(ShalevOhad.DCS.SRS.Recorder.PlayerClient.Models.FrequencyFilterConfig config)
+            public event EventHandler<int>? SeekRequested;
+
+            public Task ApplyFrequencyFilterAsync(ShalevOhad.DCS.SRS.Recorder.PlayerClient.Models.FrequencyFilterConfig config)
             {
                 return Task.CompletedTask;
             }

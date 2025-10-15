@@ -4,6 +4,7 @@
     using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.EventMessages;
     using Core;
     using Core.Debug;
+    using Core.Helpers;
     using NLog;
     using System;
 
@@ -392,7 +393,7 @@
                 if (!string.IsNullOrEmpty(exportPath))
                 {
                     Console.WriteLine($"\nExporting audio to WAV: {exportPath}");
-                    await AudioDiagnostics.ExportToWavAsync(filePath, exportPath, 100);
+                    await Helpers.ExportToWavAsync(filePath, exportPath, 100);
                     Console.ForegroundColor = ConsoleColor.Green;
                     Console.WriteLine($"✓ Audio exported successfully to: {exportPath}");
                     Console.ResetColor();

@@ -11,6 +11,8 @@ using ShalevOhad.DCS.SRS.Recorder.PlayerClient.Models;
 using ShalevOhad.DCS.SRS.Recorder.PlayerClient.Extensions;
 using ShalevOhad.DCS.SRS.Recorder.Core.Settings;
 using ShalevOhad.DCS.SRS.Recorder.Core.Models;
+using ShalevOhad.DCS.SRS.Recorder.Core.Helpers;
+using ShalevOhad.DCS.SRS.Recorder.Core;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player;
 using NLog;
 
@@ -35,24 +37,31 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Components
         #region Controls
         
         private Panel _mainPanel;
-        private Panel _topControlsPanel;
         private Panel _middleContentPanel;
         private Panel _waveformPanel;
         private Panel _frequencyPanel;
         private Panel _bottomInfoPanel;
+        private Panel _enhancedFeaturesPanel;
         
         // Custom controls
         private FrequencyFilterControl _frequencyFilterControl;
         private WaveformSeekBar _waveformSeekBar;
         private VolumeControl _volumeControl;
+        private RecentFilesComponent _recentFilesComponent;
+        private LiveAnalysisComponent _liveAnalysisComponent;
         
         // Playbook controls
         private Button _playButton;
         private Button _pauseButton;
         private Button _stopButton;
+        private Button _bookmarkButton;
+        private Button _showEnhancedFeaturesButton;
         
         // Current packet info
         private RichTextBox _currentPacketInfoTextBox;
+        
+        // Enhanced features
+        private bool _showEnhancedFeatures = false;
         
         #endregion
 
@@ -80,6 +89,9 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Components
             // Enable keyboard input
             this.SetStyle(ControlStyles.Selectable, true);
             this.TabStop = true;
+
+            // Handle resize events to ensure proper layout
+            this.Resize += OnComponentResize;
         }
 
         public void Initialize(IAudioPlaybackService audioPlaybackService, IWaveformService waveformService, IUIService uiService)
@@ -129,6 +141,9 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Components
 
                 // Load waveform - the WaveformSeekBar will handle loading and timing display internally
                 await _waveformService?.LoadWaveformAsync(filePath)!;
+
+                // Also load waveform data directly into the seek bar for visualization
+                await _waveformSeekBar?.SetWaveformDataAsync(filePath)!;
 
                 // Enable controls
                 _playButton.Enabled = true;
@@ -180,33 +195,63 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Components
                 info.AppendLine($"Aircraft: {currentPacket.PlayerData.AircraftInfo.UnitType}");
 
             _currentPacketInfoTextBox.Text = info.ToString();
+            
+            // Update live analysis if enabled
+            UpdateLiveAnalysis(currentPacket);
+        }
+
+        public void AddBookmark(string description = "")
+        {
+            if (!string.IsNullOrEmpty(_currentFilePath) && _audioPlaybackService != null)
+            {
+                var position = _audioPlaybackService.CurrentPosition;
+                var bookmark = new AudioBookmark(_currentFilePath, position, 
+                    string.IsNullOrEmpty(description) ? $"Bookmark at {FormatTime(position)}" : description, 
+                    DateTime.Now);
+                
+                _recentFilesComponent?.AddBookmark(bookmark);
+                OnStatusChanged($"Bookmark added at {FormatTime(position)}");
+            }
+        }
+
+        private void UpdateLiveAnalysis(Core.AudioPacketMetadata packet)
+        {
+            if (_liveAnalysisComponent?.IsAnalysisEnabled == true)
+            {
+                // This would integrate with a live analysis service
+                // For now, we'll create a placeholder update
+                var stats = new LiveAnalysisStats(
+                    1, // ProcessedPackets - would be accumulated
+                    new Dictionary<double, int> { { packet.Frequency, 1 } },
+                    new Dictionary<string, int> { { packet.PlayerData?.GetDisplayName() ?? "Unknown", 1 } },
+                    new Dictionary<string, int> { { GetModulationName((int)packet.Modulation), 1 } },
+                    TimeSpan.FromSeconds(1),
+                    1.0
+                );
+                
+                _liveAnalysisComponent.CurrentStats = stats;
+            }
         }
 
         #region Control Creation
 
         private void CreateControls()
         {
-            // Set light blue background for the entire component
-            this.BackColor = Color.FromArgb(240, 248, 255);
+            // Set background from design language
+            this.BackColor = DesignLanguage.Colors.BackgroundDrawing;
             
             _mainPanel = new Panel
             {
                 Dock = DockStyle.Fill,
-                Padding = new Padding(16, 12, 16, 12),
-                BackColor = Color.FromArgb(240, 248, 255)
+                Padding = new System.Windows.Forms.Padding(DesignLanguage.LayoutPadding.Dialog),
+                BackColor = DesignLanguage.Colors.BackgroundDrawing
             };
             Controls.Add(_mainPanel);
 
             // Create controls in proper docking order
-            // Controls with DockStyle.Fill should be added last
-            CreateBottomInfoPanel();    // DockStyle.Bottom - add first
-            CreateMiddleContentPanel(); // DockStyle.Fill - add last (no top panel needed)
-        }
-
-        private void CreateTopControlsPanel()
-        {
-            // Remove the top controls panel entirely - timing will be handled by the waveform
-            // This method is kept for compatibility but does nothing
+            CreateEnhancedFeaturesPanel(); // DockStyle.Right - add first (initially hidden)
+            CreateBottomInfoPanel();       // DockStyle.Bottom - add second
+            CreateMiddleContentPanel();    // DockStyle.Fill - add last
         }
 
         private void CreateMiddleContentPanel()
@@ -214,8 +259,9 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Components
             _middleContentPanel = new Panel
             {
                 Dock = DockStyle.Fill,
-                Padding = new Padding(0, 6, 0, 12),  // Reduced top padding since no top panel
-                BackColor = Color.FromArgb(240, 248, 255)
+                Padding = new System.Windows.Forms.Padding(0, 0, 0, DesignLanguage.Sizes.Spacing * 1 + 4),  // Remove top padding
+                BackColor = DesignLanguage.Colors.BackgroundDrawing,
+                MinimumSize = new Size(600, 300)  // Ensure minimum size for the entire middle section
             };
 
             // Create frequency panel (on the right)
@@ -226,7 +272,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Components
             {
                 Dock = DockStyle.Right,
                 Width = 8,
-                BackColor = Color.FromArgb(240, 248, 255),
+                BackColor = DesignLanguage.Colors.BackgroundDrawing,
                 Cursor = Cursors.VSplit
             };
 
@@ -246,58 +292,49 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Components
             _waveformPanel = new Panel
             {
                 Dock = DockStyle.Fill,
-                BackColor = Color.FromArgb(230, 245, 255),
-                Padding = new Padding(16, 12, 8, 12),
-                Margin = new Padding(0, 0, 0, 0)
+                BackColor = DesignLanguage.Colors.PanelDrawing,
+                Padding = new System.Windows.Forms.Padding(DesignLanguage.LayoutPadding.Default),
+                Margin = new Padding(0),
+                MinimumSize = new Size(300, 200)  // Ensure minimum size for waveform display
             };
             
             // Add rounded corners using custom paint
             _waveformPanel.Paint += (sender, e) => {
                 var rect = new Rectangle(0, 0, _waveformPanel.Width, _waveformPanel.Height);
-                using (var path = CreateRoundedRectanglePath(rect, 12))
-                using (var brush = new SolidBrush(Color.FromArgb(230, 245, 255)))
-                {
-                    e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                    e.Graphics.FillPath(brush, path);
-                }
+                Helpers.DrawRoundedPanel(e.Graphics, rect, 12, Color.FromArgb(230, 245, 255));
             };
 
             // Waveform seek bar with integrated timing display - no separate time header needed
             _waveformSeekBar = new WaveformSeekBar
             {
                 Dock = DockStyle.Fill,
-                BackColor = Color.FromArgb(230, 245, 255),
+                BackColor = DesignLanguage.Colors.PanelDrawing,
                 ShowTimeLabels = true,        // Show start/end times at corners
                 ShowCurrentTimeLabel = true,  // Show current time near position line
-                TimeLabelColor = Color.FromArgb(60, 80, 120),
-                CurrentTimeLabelColor = Color.FromArgb(180, 20, 20)
+                TimeLabelColor = DesignLanguage.Colors.TextSecondaryDrawing,
+                CurrentTimeLabelColor = DesignLanguage.Colors.ErrorDrawing
             };
 
             _waveformPanel.Controls.Add(_waveformSeekBar);
         }
         
         // Remove the separate time header - timing is now handled by WaveformSeekBar internally
-
         private void CreateFrequencyPanel()
         {
             _frequencyPanel = new Panel
             {
                 Dock = DockStyle.Right,
-                Width = 350,
-                BackColor = Color.FromArgb(230, 245, 255),
-                Padding = new Padding(8, 4, 8, 8),
-                Margin = new Padding(0, 0, 0, 0)
+                BackColor = DesignLanguage.Colors.PanelDrawing,
+                Padding = new System.Windows.Forms.Padding(DesignLanguage.LayoutPadding.Default),
+                Margin = new Padding(0),
+                MinimumSize = new Size(200, 0),  // Minimum width of 200px
+                MaximumSize = new Size(500, 0)   // Maximum width of 500px
             };
             
             // Add rounded corners using custom paint
             _frequencyPanel.Paint += (sender, e) => {
                 var rect = new Rectangle(0, 0, _frequencyPanel.Width, _frequencyPanel.Height);
-                using (var path = CreateRoundedRectanglePath(rect, 12))
-                using (var brush = new SolidBrush(Color.FromArgb(230, 245, 255)))
-                {
-                    e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                    e.Graphics.FillPath(brush, path);
-                }
+                Helpers.DrawRoundedPanel(e.Graphics, rect, 12, Color.FromArgb(230, 245, 255));
             };
 
             // Create and configure the frequency filter control
@@ -319,24 +356,19 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Components
             {
                 Height = 140,  // Increased height for better packet info display
                 Dock = DockStyle.Bottom,
-                BackColor = Color.FromArgb(220, 240, 255),
-                Padding = new Padding(16, 12, 16, 16),
-                Margin = new Padding(0, 0, 0, 0)
+                BackColor = DesignLanguage.Colors.PanelAltDrawing,
+                Padding = new System.Windows.Forms.Padding(DesignLanguage.LayoutPadding.Default),
+                Margin = new Padding(0)
             };
             
             // Add rounded corners using custom paint
             _bottomInfoPanel.Paint += (sender, e) => {
                 var rect = new Rectangle(0, 0, _bottomInfoPanel.Width, _bottomInfoPanel.Height);
-                using (var path = CreateRoundedRectanglePath(rect, 12))
-                using (var brush = new SolidBrush(Color.FromArgb(220, 240, 255)))
-                {
-                    e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                    e.Graphics.FillPath(brush, path);
-                }
+                Helpers.DrawRoundedPanel(e.Graphics, rect, 12, Color.FromArgb(220, 240, 255));
             };
 
-            // Create minimalistic playback controls panel on the left
-            var playbackControlsPanel = CreateMinimalisticPlaybackPanel();
+            // Create enhanced playback controls panel on the left
+            var playbackControlsPanel = CreateEnhancedPlaybackPanel();
 
             // Create packet info panel on the right
             var packetInfoPanel = new Panel
@@ -351,8 +383,8 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Components
                 Text = "Current Packet Info",
                 Height = 24,
                 Dock = DockStyle.Top,
-                Font = new Font("Segoe UI", 10F, FontStyle.Bold),
-                ForeColor = Color.FromArgb(60, 60, 80),
+                Font = DesignLanguage.Fonts.GetDrawingFont(10f, FontStyle.Bold),
+                ForeColor = DesignLanguage.Colors.TextPrimaryDrawing,
                 BackColor = Color.Transparent
             };
 
@@ -360,13 +392,13 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Components
             {
                 Dock = DockStyle.Fill,
                 ReadOnly = true,
-                BackColor = Color.FromArgb(245, 250, 255),
-                ForeColor = Color.FromArgb(40, 40, 50),
+                BackColor = DesignLanguage.Colors.PanelDrawing,
+                ForeColor = DesignLanguage.Colors.TextPrimaryDrawing,
                 BorderStyle = BorderStyle.FixedSingle,
-                Font = new Font("Consolas", 9F),
+                Font = DesignLanguage.Fonts.GetDrawingFont(9f),
                 Text = "No packet currently playing",
                 ScrollBars = RichTextBoxScrollBars.Vertical,
-                Margin = new Padding(0, 4, 0, 0)
+                Margin = new System.Windows.Forms.Padding(0, DesignLanguage.Sizes.Spacing / 2, 0, 0)
             };
 
             packetInfoPanel.Controls.Add(_currentPacketInfoTextBox);
@@ -378,20 +410,75 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Components
             _mainPanel.Controls.Add(_bottomInfoPanel);
         }
 
+        private void CreateEnhancedFeaturesPanel()
+        {
+            _enhancedFeaturesPanel = new Panel
+            {
+                Width = 400,
+                Dock = DockStyle.Right,
+                BackColor = DesignLanguage.Colors.PanelAltDrawing,
+                Padding = new System.Windows.Forms.Padding(DesignLanguage.LayoutPadding.Default),
+                Visible = _showEnhancedFeatures
+            };
 
+            // Add rounded corners
+            _enhancedFeaturesPanel.Paint += (sender, e) => 
+                Helpers.DrawRoundedPanel(e.Graphics, _enhancedFeaturesPanel.ClientRectangle, 12, Color.FromArgb(235, 245, 255));
 
+            // Create tab control for enhanced features
+            var enhancedTabControl = new TabControl
+            {
+                Dock = DockStyle.Fill,
+                Font = DesignLanguage.Fonts.GetDrawingFont(9f),
+                Appearance = TabAppearance.Normal
+            };
 
+            // Recent Files & Bookmarks Tab
+            var filesTab = new TabPage("Files & Bookmarks")
+            {
+                BackColor = Color.FromArgb(250, 252, 255),
+                UseVisualStyleBackColor = true
+            };
 
+            _recentFilesComponent = new RecentFilesComponent
+            {
+                Dock = DockStyle.Fill
+            };
+            _recentFilesComponent.FileSelected += OnEnhancedFileSelected;
+            _recentFilesComponent.BookmarkSelected += OnBookmarkSelected;
+            _recentFilesComponent.StatusChanged += (s, status) => OnStatusChanged(status);
 
+            filesTab.Controls.Add(_recentFilesComponent);
 
-        private Panel CreateMinimalisticPlaybackPanel()
+            // Live Analysis Tab
+            var analysisTab = new TabPage("Live Analysis")
+            {
+                BackColor = Color.FromArgb(250, 252, 255),
+                UseVisualStyleBackColor = true
+            };
+
+            _liveAnalysisComponent = new LiveAnalysisComponent
+            {
+                Dock = DockStyle.Fill
+            };
+            _liveAnalysisComponent.StatusChanged += (s, status) => OnStatusChanged(status);
+
+            analysisTab.Controls.Add(_liveAnalysisComponent);
+
+            enhancedTabControl.TabPages.AddRange(new[] { filesTab, analysisTab });
+            _enhancedFeaturesPanel.Controls.Add(enhancedTabControl);
+
+            _mainPanel.Controls.Add(_enhancedFeaturesPanel);
+        }
+
+        private Panel CreateEnhancedPlaybackPanel()
         {
             var playbackPanel = new Panel
             {
                 Dock = DockStyle.Left,
-                Width = 160,  // Compact width
+                Width = 180,  // Slightly wider for bookmark button
                 BackColor = Color.Transparent,
-                Padding = new Padding(8)
+                Padding = new System.Windows.Forms.Padding(DesignLanguage.LayoutPadding.Default)
             };
 
             // Create vertical layout for controls
@@ -401,17 +488,18 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Components
                 BackColor = Color.Transparent
             };
 
-            // Create compact playback buttons
-            var buttonsPanel = CreateCompactPlaybackButtons();
+            // Create enhanced playback buttons with bookmark
+            var buttonsPanel = CreateEnhancedPlaybackButtons();
             buttonsPanel.Dock = DockStyle.Top;
-            buttonsPanel.Height = 45;
+            buttonsPanel.Height = 70 // Increased height for two rows
+            ;
 
             // Create compact volume control
             _volumeControl = new VolumeControl
             {
                 Dock = DockStyle.Bottom,
                 Height = 35,
-                BackColor = Color.Transparent
+                BackColor = DesignLanguage.Colors.PanelDrawing  // Use design language background
             };
 
             controlsContainer.Controls.Add(buttonsPanel);
@@ -421,12 +509,12 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Components
             return playbackPanel;
         }
 
-        private Panel CreateCompactPlaybackButtons()
+        private Panel CreateEnhancedPlaybackButtons()
         {
             var panel = new Panel
             {
                 BackColor = Color.Transparent,
-                Height = 45
+                Height = 70
             };
 
             // Create tooltip for buttons
@@ -438,26 +526,96 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Components
                 ShowAlways = true
             };
 
-            // Create smaller, more compact buttons
-            _playButton = CreateCompactPlaybackButton("?", Color.FromArgb(70, 175, 70));
-            _pauseButton = CreateCompactPlaybackButton("?", Color.FromArgb(255, 165, 0));
-            _stopButton = CreateCompactPlaybackButton("?", Color.FromArgb(220, 70, 70));
+            // First row - main playback controls (text labels instead of icons)
+            _playButton = CreateCompactPlaybackButton("Play", DesignLanguage.Colors.PrimaryDrawing);
+            _pauseButton = CreateCompactPlaybackButton("Pause", DesignLanguage.Colors.WarningDrawing);
+            _stopButton = CreateCompactPlaybackButton("Stop", DesignLanguage.Colors.ErrorDrawing);
 
             _playButton.Enabled = false;
             _pauseButton.Enabled = false;
             _stopButton.Enabled = false;
 
-            // Position buttons horizontally
+            // Position first row buttons
             _playButton.Location = new Point(8, 8);
-            _pauseButton.Location = new Point(42, 8);
-            _stopButton.Location = new Point(76, 8);
+            _pauseButton.Location = new Point(8 + _playButton.Width + 8, 8);
+            _stopButton.Location = new Point(8 + (_playButton.Width + 8) * 2, 8);
+
+            // Second row - enhanced features (use text labels)
+            _bookmarkButton = CreateCompactPlaybackButton("Bookmark", DesignLanguage.Colors.AccentDrawing);
+            _showEnhancedFeaturesButton = CreateCompactPlaybackButton("More", DesignLanguage.Colors.AccentDrawing);
+
+            _bookmarkButton.Location = new Point(8, 42);
+            _showEnhancedFeaturesButton.Location = new Point(8 + _bookmarkButton.Width + 8, 42);
 
             tooltip.SetToolTip(_playButton, "Start playback (Spacebar)");
             tooltip.SetToolTip(_pauseButton, "Pause/Resume playback (Spacebar)");
             tooltip.SetToolTip(_stopButton, "Stop playback (Escape)");
+            tooltip.SetToolTip(_bookmarkButton, "Add bookmark at current position (Ctrl+B)");
+            tooltip.SetToolTip(_showEnhancedFeaturesButton, "Show/Hide enhanced features panel");
 
-            panel.Controls.AddRange(new Control[] { _playButton, _pauseButton, _stopButton });
+            // Wire up new button events
+            _bookmarkButton.Click += OnBookmarkButtonClick;
+            _showEnhancedFeaturesButton.Click += OnShowEnhancedFeaturesClick;
+
+            panel.Controls.AddRange(new Control[] 
+            { 
+                _playButton, _pauseButton, _stopButton, 
+                _bookmarkButton, _showEnhancedFeaturesButton 
+            });
+            
             return panel;
+        }
+
+        private void OnEnhancedFileSelected(object? sender, string filePath)
+        {
+            // This would trigger file loading through the parent component
+            OnStatusChanged($"Selected file: {System.IO.Path.GetFileName(filePath)}");
+            
+            // Fire an event or callback to the parent to handle file loading
+            // For now, we'll just show a status message
+        }
+
+        private void OnBookmarkSelected(object? sender, AudioBookmark bookmark)
+        {
+            // Seek to bookmark position if the same file is loaded
+            if (_currentFilePath == bookmark.FilePath && _audioPlaybackService != null)
+            {
+                try
+                {
+                    _audioPlaybackService.SeekToAsync(bookmark.Position);
+                    OnStatusChanged($"Jumped to bookmark: {bookmark.Description}");
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error(ex, "Error seeking to bookmark");
+                    _uiService?.ShowError($"Error seeking to bookmark: {ex.Message}");
+                }
+            }
+            else
+            {
+                OnStatusChanged($"Bookmark is for different file: {System.IO.Path.GetFileName(bookmark.FilePath)}");
+            }
+        }
+
+        private void OnBookmarkButtonClick(object? sender, EventArgs e)
+        {
+            // Simple approach - use a default description for now
+            // In a full implementation, you could create a custom dialog
+            var defaultDescription = $"Bookmark at {DateTime.Now:HH:mm:ss}";
+            AddBookmark(defaultDescription);
+        }
+
+        private void OnShowEnhancedFeaturesClick(object? sender, EventArgs e)
+        {
+            _showEnhancedFeatures = !_showEnhancedFeatures;
+            _enhancedFeaturesPanel.Visible = _showEnhancedFeatures;
+            
+            // Update button appearance
+            _showEnhancedFeaturesButton.BackColor = _showEnhancedFeatures 
+                ? Color.FromArgb(120, 80, 200) 
+                : Color.FromArgb(150, 100, 255);
+                
+            OnStatusChanged(_showEnhancedFeatures ? "Enhanced features shown" : "Enhanced features hidden");
         }
 
         private Button CreateCompactPlaybackButton(string symbol, Color accentColor)
@@ -465,8 +623,8 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Components
             var button = new Button
             {
                 Text = symbol,
-                Size = new Size(28, 28),  // Compact size
-                Font = new Font("Segoe UI Symbol", 10F, FontStyle.Regular),
+                Size = new Size(80, 32),  // Slightly larger size for better text visibility
+                Font = DesignLanguage.Fonts.GetDrawingFont(DesignLanguage.Fonts.Normal, FontStyle.Regular),
                 ForeColor = Color.White,
                 BackColor = accentColor,
                 FlatStyle = FlatStyle.Flat,
@@ -475,9 +633,10 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Components
                 TextAlign = ContentAlignment.MiddleCenter
             };
             
-            button.FlatAppearance.BorderSize = 0;
+            button.FlatAppearance.BorderSize = 1;
+            button.FlatAppearance.BorderColor = ControlPaint.Dark(accentColor, 0.3f);
             
-            // Create hover and pressed colors
+            // Simple hover effects without custom painting
             var hoverColor = ControlPaint.Light(accentColor, 0.2f);
             var pressedColor = ControlPaint.Dark(accentColor, 0.2f);
             var disabledColor = Color.FromArgb(80, 80, 90);
@@ -486,37 +645,30 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Components
                 if (button.Enabled)
                     button.BackColor = hoverColor;
             };
-            
             button.MouseLeave += (s, e) => {
-                if (button.Enabled)
-                    button.BackColor = accentColor;
+                button.BackColor = accentColor;
             };
-            
             button.MouseDown += (s, e) => {
-                if (button.Enabled)
-                    button.BackColor = pressedColor;
+                button.BackColor = pressedColor;
             };
-            
             button.MouseUp += (s, e) => {
                 if (button.Enabled)
                     button.BackColor = button.ClientRectangle.Contains(button.PointToClient(Cursor.Position)) ? hoverColor : accentColor;
+                    button.BackColor = hoverColor;
             };
-            
-            button.EnabledChanged += (s, e) => {
-                button.BackColor = button.Enabled ? accentColor : disabledColor;
-                button.ForeColor = button.Enabled ? Color.White : Color.FromArgb(120, 120, 120);
-            };
-            
+
             // Add rounded appearance
             button.Paint += (sender, e) => {
                 e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                // Draw rounded rectangle background
                 var rect = new Rectangle(1, 1, button.Width - 2, button.Height - 2);
+                using (var path = Helpers.CreateRoundedRectanglePath(rect, DesignLanguage.Sizes.SmallCornerRadius))
                 using (var brush = new SolidBrush(button.BackColor))
                 {
-                    e.Graphics.FillEllipse(brush, rect);
+                    e.Graphics.FillPath(brush, path);
                 }
                 
-                // Draw symbol
+                // Draw text label centered
                 var textSize = e.Graphics.MeasureString(button.Text, button.Font);
                 var textRect = new PointF(
                     (button.Width - textSize.Width) / 2,
@@ -530,7 +682,42 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Components
             return button;
         }
 
-        #endregion
+        private void InitializeComponent()
+        {
+            SuspendLayout();
+            
+            Name = "PlayerComponent";
+            Size = new Size(600, 400);
+            MinimumSize = new Size(700, 500);  // Set minimum size for the component
+            
+            ResumeLayout(false);
+        }
+
+        private void OnComponentResize(object? sender, EventArgs e)
+        {
+            // Ensure proper layout when component is resized
+            if (_mainPanel != null)
+            {
+                _mainPanel.PerformLayout();
+            }
+            
+            // Ensure waveform panel maintains minimum size
+            if (_waveformPanel != null && _waveformPanel.Width < 300)
+            {
+                // If waveform panel gets too small, adjust frequency panel size
+                if (_frequencyPanel != null && _middleContentPanel != null)
+                {
+                    int availableWidth = _middleContentPanel.ClientSize.Width;
+                    int minWaveformWidth = 300;
+                    int maxFrequencyWidth = Math.Min(500, availableWidth - minWaveformWidth - 8); // 8 for splitter
+                    
+                    if (_frequencyPanel.Width > maxFrequencyWidth)
+                    {
+                        _frequencyPanel.Width = Math.Max(200, maxFrequencyWidth);
+                    }
+                }
+            }
+        }
 
         #region Event Handlers
 
@@ -553,26 +740,41 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Components
         {
             try
             {
-                switch (e.KeyCode)
+                if (e.Control && e.KeyCode == Keys.B)
                 {
-                    case Keys.Space:
-                        e.Handled = true;
-                        if (_audioPlaybackService?.IsPlaying == true)
-                        {
-                            await OnPause();
-                        }
-                        else if (_playButton.Enabled)
-                        {
-                            await OnPlay();
-                        }
-                        break;
-                    case Keys.Escape:
-                        if (_stopButton.Enabled)
-                        {
+                    // Ctrl+B: Add bookmark
+                    e.Handled = true;
+                    OnBookmarkButtonClick(this, EventArgs.Empty);
+                }
+                else if (e.Control && e.KeyCode == Keys.E)
+                {
+                    // Ctrl+E: Toggle enhanced features
+                    e.Handled = true;
+                    OnShowEnhancedFeaturesClick(this, EventArgs.Empty);
+                }
+                else
+                {
+                    switch (e.KeyCode)
+                    {
+                        case Keys.Space:
                             e.Handled = true;
-                            await OnStop();
-                        }
-                        break;
+                            if (_audioPlaybackService?.IsPlaying == true)
+                            {
+                                await OnPause();
+                            }
+                            else if (_playButton.Enabled)
+                            {
+                                await OnPlay();
+                            }
+                            break;
+                        case Keys.Escape:
+                            if (_stopButton.Enabled)
+                            {
+                                e.Handled = true;
+                                await OnStop();
+                            }
+                            break;
+                    }
                 }
             }
             catch (Exception ex)
@@ -694,8 +896,6 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Components
             }
         }
 
-
-
         private void OnFrequencyFilterChanged(object? sender, List<FrequencyModulationInfo> selectedFrequencies)
         {
             try
@@ -727,6 +927,25 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Components
                     _volumeControl.Volume = savedVolume / 100.0f;
                 }
 
+                // Apply persisted player theme (if any). The Helpers.ApplyThemeFile only applies in-memory;
+                // persist via PlayerSettingsStore so the player keeps its own theme.
+                try
+                {
+                    var themeFile = _playerSettings.GetPlayerSettingString(PlayerSettingKeys.ThemeFile);
+                    if (!string.IsNullOrEmpty(themeFile))
+                    {
+                        var applied = Helpers.ApplyThemeFile(themeFile);
+                        if (!applied)
+                        {
+                            Logger.Warn($"Failed to apply player theme '{themeFile}'");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warn(ex, "Unable to apply persisted player theme");
+                }
+                
                 Logger.Debug($"Loaded persisted settings - Volume: {savedVolume}%");
             }
             catch (Exception ex)
@@ -772,11 +991,38 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Components
             }
         }
 
+        /// <summary>
+        /// Apply a theme and persist it to the player settings store.
+        /// The UI delegate that knows it's operating in the Player context should call this.
+        /// </summary>
+        /// <param name="fileName">Theme filename located in the themes folder</param>
+        public void ApplyAndSavePlayerTheme(string fileName)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(fileName)) return;
+
+                var applied = Helpers.ApplyThemeFile(fileName);
+                if (applied)
+                {
+                    _playerSettings.SetPlayerSetting(PlayerSettingKeys.ThemeFile, fileName);
+                    OnStatusChanged($"Theme applied: {fileName}");
+                }
+                else
+                {
+                    _uiService?.ShowError($"Failed to apply theme: {fileName}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Error applying/saving player theme");
+                _uiService?.ShowError($"Error applying theme: {ex.Message}");
+            }
+        }
+
         #endregion
 
         #region Helper Methods
-
-
 
         private async void UpdateFrequencyFilter()
         {
@@ -828,38 +1074,6 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Components
             };
         }
 
-        private static Color GetCoalitionColor(string coalition)
-        {
-            return coalition switch
-            {
-                "Red" => Color.DarkRed,
-                "Blue" => Color.DarkBlue,
-                _ => Color.DarkGreen
-            };
-        }
-
-        private static Color GetModernCoalitionColor(string coalition)
-        {
-            return coalition switch
-            {
-                "Red" => Color.FromArgb(255, 100, 100),
-                "Blue" => Color.FromArgb(100, 150, 255),
-                _ => Color.FromArgb(100, 220, 120)
-            };
-        }
-
-        private static Color GetLightThemeCoalitionColor(string coalition)
-        {
-            return coalition switch
-            {
-                "Red" => Color.FromArgb(180, 20, 20),
-                "Blue" => Color.FromArgb(20, 80, 180),
-                _ => Color.FromArgb(20, 140, 60)
-            };
-        }
-
-
-
         private static string GetModulationName(int modulation)
         {
             return ((Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player.Modulation)modulation).ToString();
@@ -878,166 +1092,6 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Components
         }
 
         #endregion
-
-        #region Modern UI Helpers
-
-        private Button CreateModernButton(string text, Point location, Size size)
-        {
-            var button = new Button
-            {
-                Text = text,
-                Location = location,
-                Size = size,
-                Font = new Font("Segoe UI", 9F, FontStyle.Regular),
-                ForeColor = Color.FromArgb(40, 60, 100),
-                BackColor = Color.FromArgb(200, 230, 255),
-                FlatStyle = FlatStyle.Flat,
-                UseVisualStyleBackColor = false,
-                Cursor = Cursors.Hand
-            };
-            
-            button.FlatAppearance.BorderSize = 0;
-            button.FlatAppearance.MouseOverBackColor = Color.FromArgb(180, 220, 255);
-            button.FlatAppearance.MouseDownBackColor = Color.FromArgb(160, 200, 240);
-            
-            // Add rounded corners and hover effects
-            button.Paint += (sender, e) => {
-                var rect = new Rectangle(0, 0, button.Width, button.Height);
-                using (var path = CreateRoundedRectanglePath(rect, 8))
-                using (var brush = new SolidBrush(button.BackColor))
-                {
-                    e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                    e.Graphics.FillPath(brush, path);
-                    
-                    // Add subtle border
-                    using (var borderPen = new Pen(Color.FromArgb(150, 180, 220), 1))
-                    {
-                        e.Graphics.DrawPath(borderPen, path);
-                    }
-                    
-                    // Draw text manually for better control
-                    var textSize = e.Graphics.MeasureString(button.Text, button.Font);
-                    var textRect = new PointF(
-                        (button.Width - textSize.Width) / 2,
-                        (button.Height - textSize.Height) / 2);
-                    using (var textBrush = new SolidBrush(button.ForeColor))
-                    {
-                        e.Graphics.DrawString(button.Text, button.Font, textBrush, textRect);
-                    }
-                }
-            };
-            
-            return button;
-        }
-
-        private Button CreateModernPlaybackButton(string symbol, Size size, Color accentColor)
-        {
-            var button = new Button
-            {
-                Text = symbol,
-                Size = size,
-                Font = new Font("Segoe UI Symbol", 14F, FontStyle.Regular),
-                ForeColor = Color.White,
-                BackColor = accentColor,
-                FlatStyle = FlatStyle.Flat,
-                UseVisualStyleBackColor = false,
-                Cursor = Cursors.Hand,
-                TextAlign = ContentAlignment.MiddleCenter
-            };
-            
-            button.FlatAppearance.BorderSize = 0;
-            
-            // Create hover and pressed colors
-            var hoverColor = ControlPaint.Light(accentColor, 0.2f);
-            var pressedColor = ControlPaint.Dark(accentColor, 0.2f);
-            var disabledColor = Color.FromArgb(80, 80, 90);
-            
-            button.MouseEnter += (s, e) => {
-                if (button.Enabled)
-                    button.BackColor = hoverColor;
-            };
-            
-            button.MouseLeave += (s, e) => {
-                if (button.Enabled)
-                    button.BackColor = accentColor;
-            };
-            
-            button.MouseDown += (s, e) => {
-                if (button.Enabled)
-                    button.BackColor = pressedColor;
-            };
-            
-            button.MouseUp += (s, e) => {
-                if (button.Enabled)
-                    button.BackColor = button.ClientRectangle.Contains(button.PointToClient(Cursor.Position)) ? hoverColor : accentColor;
-            };
-            
-            button.EnabledChanged += (s, e) => {
-                button.BackColor = button.Enabled ? accentColor : disabledColor;
-                button.ForeColor = button.Enabled ? Color.White : Color.FromArgb(120, 120, 120);
-            };
-            
-            // Add circular appearance
-            button.Paint += (sender, e) => {
-                e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                var rect = new Rectangle(2, 2, button.Width - 4, button.Height - 4);
-                using (var brush = new SolidBrush(button.BackColor))
-                {
-                    e.Graphics.FillEllipse(brush, rect);
-                }
-                
-                // Add subtle shadow
-                if (button.Enabled)
-                {
-                    var shadowRect = new Rectangle(0, 0, button.Width, button.Height);
-                    using (var shadowBrush = new SolidBrush(Color.FromArgb(30, 0, 0, 0)))
-                    {
-                        e.Graphics.FillEllipse(shadowBrush, shadowRect);
-                    }
-                }
-                
-                // Draw symbol
-                var textSize = e.Graphics.MeasureString(button.Text, button.Font);
-                var textRect = new PointF(
-                    (button.Width - textSize.Width) / 2,
-                    (button.Height - textSize.Height) / 2);
-                using (var textBrush = new SolidBrush(button.ForeColor))
-                {
-                    e.Graphics.DrawString(button.Text, button.Font, textBrush, textRect);
-                }
-            };
-            
-            return button;
-        }
-
-        private System.Drawing.Drawing2D.GraphicsPath CreateRoundedRectanglePath(Rectangle rect, int cornerRadius)
-        {
-            var path = new System.Drawing.Drawing2D.GraphicsPath();
-            var diameter = cornerRadius * 2;
-            
-            // Top left arc
-            path.AddArc(rect.X, rect.Y, diameter, diameter, 180, 90);
-            // Top right arc
-            path.AddArc(rect.Right - diameter, rect.Y, diameter, diameter, 270, 90);
-            // Bottom right arc
-            path.AddArc(rect.Right - diameter, rect.Bottom - diameter, diameter, diameter, 0, 90);
-            // Bottom left arc
-            path.AddArc(rect.X, rect.Bottom - diameter, diameter, diameter, 90, 90);
-            
-            path.CloseFigure();
-            return path;
-        }
-
-        #endregion
-
-        private void InitializeComponent()
-        {
-            SuspendLayout();
-            
-            Name = "PlayerComponent";
-            Size = new Size(600, 400);
-            
-            ResumeLayout(false);
-        }
     }
+#endregion
 }

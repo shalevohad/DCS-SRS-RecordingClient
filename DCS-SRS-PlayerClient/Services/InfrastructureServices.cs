@@ -125,9 +125,19 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Services
         public WaveformService(Controls.WaveformSeekBar waveformSeekBar)
         {
             _waveformSeekBar = waveformSeekBar ?? throw new ArgumentNullException(nameof(waveformSeekBar));
+            
+            // Wire up the seek event
+            _waveformSeekBar.PositionChanged += OnWaveformPositionChanged;
         }
 
         public bool IsUserSeeking => _waveformSeekBar.IsDragging;
+
+        public event EventHandler<int>? SeekRequested;
+
+        private void OnWaveformPositionChanged(object? sender, int position)
+        {
+            SeekRequested?.Invoke(this, position);
+        }
 
         public async Task LoadWaveformAsync(string filePath)
         {

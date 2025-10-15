@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using NLog;
 using ShalevOhad.DCS.SRS.Recorder.Core.Models;
+using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player;
 
 namespace ShalevOhad.DCS.SRS.Recorder.Core.Audio
 {
@@ -236,7 +237,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core.Audio
                                 
                                 _bufferedAudio.Enqueue(chunk);
                                 
-                                Logger.Trace($"Buffered audio chunk at {playbackTime} (packet {_currentPacketIndex - 1})");
+                                Logger.Trace($"?? Buffered audio chunk at {playbackTime} (packet {_currentPacketIndex - 1}, Freq={packetToProcess.Frequency:F1} Hz, Mod={(Modulation)packetToProcess.Modulation})");
                             }
                             else
                             {
@@ -246,6 +247,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core.Audio
                         else
                         {
                             _bufferSemaphore.Release(); // No audio produced, release semaphore
+                            Logger.Trace($"No audio produced for packet at index {_currentPacketIndex - 1}");
                         }
                     }
                     catch (Exception ex)

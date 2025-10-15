@@ -8,6 +8,7 @@ using System.Windows.Forms;
 using ShalevOhad.DCS.SRS.Recorder.PlayerClient.Services;
 using ShalevOhad.DCS.SRS.Recorder.Core.Analysis;
 using ShalevOhad.DCS.SRS.Recorder.Core.Models;
+using ShalevOhad.DCS.SRS.Recorder.Core.Helpers;
 using NLog;
 
 namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Tabs
@@ -30,8 +31,10 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Tabs
         private Label _currentFilePathLabel;
         private Button _analyzeActivityButton;
         private Button _analyzeFrequenciesButton;
+        private Button _exportToWavButton;
         private NumericUpDown _silenceThresholdNumericUpDown;
         private NumericUpDown _minimumActivityNumericUpDown;
+        private NumericUpDown _maxPacketsForExportNumericUpDown;
         private RichTextBox _analysisResultsTextBox;
         private ProgressBar _analysisProgressBar;
         private Label _analysisStatusLabel;
@@ -192,8 +195,24 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Tabs
             _minimumActivityNumericUpDown.Value = 100;
             _minimumActivityNumericUpDown.Increment = 50;
             _minimumActivityNumericUpDown.Width = 80;
-            _minimumActivityNumericUpDown.Margin = new Padding(0, 6, 0, 0);
+            _minimumActivityNumericUpDown.Margin = new Padding(0, 6, 16, 0);
             flowLayout.Controls.Add(_minimumActivityNumericUpDown);
+
+            var exportLabel = new Label();
+            exportLabel.Text = "Max Packets:";
+            exportLabel.AutoSize = true;
+            exportLabel.TextAlign = ContentAlignment.MiddleLeft;
+            exportLabel.Margin = new Padding(0, 8, 8, 0);
+            flowLayout.Controls.Add(exportLabel);
+
+            _maxPacketsForExportNumericUpDown = new NumericUpDown();
+            _maxPacketsForExportNumericUpDown.Minimum = 10;
+            _maxPacketsForExportNumericUpDown.Maximum = 1000;
+            _maxPacketsForExportNumericUpDown.Value = 100;
+            _maxPacketsForExportNumericUpDown.Increment = 10;
+            _maxPacketsForExportNumericUpDown.Width = 80;
+            _maxPacketsForExportNumericUpDown.Margin = new Padding(0, 6, 0, 0);
+            flowLayout.Controls.Add(_maxPacketsForExportNumericUpDown);
         }
 
         private void CreateAnalysisButtonsAndProgress(Panel panel)
@@ -215,8 +234,18 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Tabs
             _analyzeFrequenciesButton = new Button();
             _analyzeFrequenciesButton.Text = "Analyze Frequencies";
             _analyzeFrequenciesButton.Size = new Size(130, 32);
-            _analyzeFrequenciesButton.Margin = new Padding(0, 0, 16, 0);
+            _analyzeFrequenciesButton.Margin = new Padding(0, 0, 8, 0);
             flowLayout.Controls.Add(_analyzeFrequenciesButton);
+
+            _exportToWavButton = new Button();
+            _exportToWavButton.Text = "Export to WAV";
+            _exportToWavButton.Size = new Size(110, 32);
+            _exportToWavButton.Margin = new Padding(0, 0, 16, 0);
+            _exportToWavButton.BackColor = Color.LightGreen;
+            _exportToWavButton.FlatStyle = FlatStyle.Flat;
+            _exportToWavButton.FlatAppearance.BorderColor = Color.Green;
+            _exportToWavButton.Font = new Font(_exportToWavButton.Font, FontStyle.Bold);
+            flowLayout.Controls.Add(_exportToWavButton);
 
             _analysisProgressBar = new ProgressBar();
             _analysisProgressBar.Size = new Size(150, 28);
@@ -289,14 +318,18 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Tabs
                    "• Analyze audio activity periods in recordings\n" +
                    "• Identify frequency usage patterns\n" +
                    "• Review player activity statistics\n" +
+                   "? Export audio data to WAV format for external analysis\n" +
                    "• Export analysis results\n\n" +
-                   "Select a recording file and choose an analysis type to begin.";
+                   "Select a recording file and choose an analysis type to begin.\n\n" +
+                   "Use 'Export to WAV' to convert recorded audio to a standard WAV file\n" +
+                   "that can be opened in audio editing software like Audacity.";
         }
 
         private void SetupEventHandlers()
         {
             _analyzeActivityButton.Click += OnAnalyzeActivity;
             _analyzeFrequenciesButton.Click += OnAnalyzeFrequencies;
+            _exportToWavButton.Click += OnExportToWav;
         }
 
         private void SetupTreeViewEventHandlers()
@@ -391,6 +424,105 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Tabs
             }
         }
 
+        private async void OnExportToWav(object? sender, EventArgs e)
+        {
+            if (string.IsNullOrEmpty(_currentFilePath))
+            {
+                _uiService?.ShowWarning("No recording file selected. Please use the Player tab to select a file first.");
+                return;
+            }
+
+            if (!File.Exists(_currentFilePath))
+            {
+                _uiService?.ShowError("The selected recording file no longer exists.");
+                return;
+            }
+
+            try
+            {
+                // Show save file dialog
+                using var saveDialog = new SaveFileDialog
+                {
+                    Filter = "WAV Audio Files (*.wav)|*.wav|All Files (*.*)|*.*",
+                    DefaultExt = "wav",
+                    AddExtension = true,
+                    Title = "Export Audio to WAV File",
+                    FileName = Path.GetFileNameWithoutExtension(_currentFilePath) + "_exported.wav"
+                };
+
+                if (saveDialog.ShowDialog() != DialogResult.OK)
+                {
+                    return; // User cancelled
+                }
+
+                var outputPath = saveDialog.FileName;
+                var maxPackets = (int)_maxPacketsForExportNumericUpDown.Value;
+
+                SetAnalysisInProgress(true);
+                _analysisStatusLabel.Text = "Exporting to WAV...";
+                _analysisStatusLabel.ForeColor = Color.Blue;
+
+                AppendToAnalysisResults($"\n[{DateTime.Now:HH:mm:ss}] Starting WAV export...");
+                AppendToAnalysisResults($"Source: {Path.GetFileName(_currentFilePath)}");
+                AppendToAnalysisResults($"Output: {Path.GetFileName(outputPath)}");
+                AppendToAnalysisResults($"Max packets: {maxPackets}");
+
+                // Perform the export in a background task
+                await Task.Run(async () =>
+                {
+                    await Helpers.ExportToWavAsync(
+                        _currentFilePath, 
+                        outputPath, 
+                        maxPackets);
+                });
+
+                AppendToAnalysisResults($"? Export completed successfully!");
+                AppendToAnalysisResults($"WAV file saved to: {outputPath}");
+                
+                var fileInfo = new FileInfo(outputPath);
+                if (fileInfo.Exists)
+                {
+                    AppendToAnalysisResults($"Output file size: {fileInfo.Length:N0} bytes ({fileInfo.Length / 1024.0 / 1024.0:F2} MB)");
+                }
+
+                _analysisStatusLabel.Text = "WAV export completed";
+                _analysisStatusLabel.ForeColor = Color.Green;
+
+                // Ask user if they want to open the folder containing the exported file
+                var result = MessageBox.Show(
+                    $"WAV export completed successfully!\n\nFile saved to:\n{outputPath}\n\nWould you like to open the folder containing the exported file?",
+                    "Export Successful",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Information);
+
+                if (result == DialogResult.Yes)
+                {
+                    try
+                    {
+                        System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{outputPath}\"");
+                    }
+                    catch (Exception openEx)
+                    {
+                        Logger.Warn(openEx, "Failed to open folder containing exported file");
+                        _uiService?.ShowWarning($"Export completed, but could not open folder: {openEx.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Error exporting to WAV");
+                AppendToAnalysisResults($"\n[{DateTime.Now:HH:mm:ss}] EXPORT ERROR: {ex.Message}");
+                _analysisStatusLabel.Text = "Export failed";
+                _analysisStatusLabel.ForeColor = Color.Red;
+                
+                _uiService?.ShowError($"Failed to export to WAV file:\n\n{ex.Message}");
+            }
+            finally
+            {
+                SetAnalysisInProgress(false);
+            }
+        }
+
         #endregion
 
         #region Helper Methods
@@ -399,6 +531,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Tabs
         {
             _analyzeActivityButton.Enabled = !inProgress;
             _analyzeFrequenciesButton.Enabled = !inProgress;
+            _exportToWavButton.Enabled = !inProgress;
             _analysisProgressBar.Visible = inProgress;
             _analysisProgressBar.Style = inProgress ? ProgressBarStyle.Marquee : ProgressBarStyle.Continuous;
         }
@@ -789,15 +922,17 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Tabs
             {
                 _currentFilePathLabel.Text = filePath;
                 _currentFilePathLabel.ForeColor = SystemColors.WindowText;
-                _analysisStatusLabel.Text = "File ready for analysis";
+                _analysisStatusLabel.Text = "File ready for analysis and export";
                 _analysisStatusLabel.ForeColor = Color.Green;
                 
-                // Enable analysis buttons
+                // Enable analysis and export buttons
                 _analyzeActivityButton.Enabled = true;
                 _analyzeFrequenciesButton.Enabled = true;
+                _exportToWavButton.Enabled = true;
                 
                 AppendToAnalysisResults($"\n[{DateTime.Now:HH:mm:ss}] File selected: {Path.GetFileName(filePath)}");
                 AppendToAnalysisResults($"Full path: {filePath}");
+                AppendToAnalysisResults($"? Audio export available - click 'Export to WAV' to save audio data to a standard WAV file");
             }
             else
             {
@@ -806,9 +941,10 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Tabs
                 _analysisStatusLabel.Text = "No file selected";
                 _analysisStatusLabel.ForeColor = SystemColors.ControlDarkDark;
                 
-                // Disable analysis buttons until file is selected
+                // Disable analysis and export buttons until file is selected
                 _analyzeActivityButton.Enabled = false;
                 _analyzeFrequenciesButton.Enabled = false;
+                _exportToWavButton.Enabled = false;
             }
         }
 

@@ -13,7 +13,8 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
     {
         ServerIp,
         ServerPort,
-        RecordingFile
+        RecordingFile,
+        ThemeFile
     }
 
     public class RecorderSettingsStore
@@ -29,7 +30,8 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
         {
             { RecorderSettingKeys.ServerIp.ToString(), "127.0.0.1" },
             { RecorderSettingKeys.ServerPort.ToString(), "5002" },
-            { RecorderSettingKeys.RecordingFile.ToString(), "recorded_audio.raw" }
+            { RecorderSettingKeys.RecordingFile.ToString(), "recorded_audio.raw" },
+            { RecorderSettingKeys.ThemeFile.ToString(), "light.json" }
         };
 
         public string ConfigFileName { get; } = CFG_FILE_NAME;
@@ -79,6 +81,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
                 SetRecorderSetting(RecorderSettingKeys.ServerIp, defaultRecorderSettings[RecorderSettingKeys.ServerIp.ToString()]);
                 SetRecorderSetting(RecorderSettingKeys.ServerPort, int.Parse(defaultRecorderSettings[RecorderSettingKeys.ServerPort.ToString()]));
                 SetRecorderSetting(RecorderSettingKeys.RecordingFile, defaultRecorderSettings[RecorderSettingKeys.RecordingFile.ToString()]);
+                SetRecorderSetting(RecorderSettingKeys.ThemeFile, defaultRecorderSettings[RecorderSettingKeys.ThemeFile.ToString()]);
                 Save();
             }
             catch (ParserException ex)
@@ -101,6 +104,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
                 SetRecorderSetting(RecorderSettingKeys.ServerIp, defaultRecorderSettings[RecorderSettingKeys.ServerIp.ToString()]);
                 SetRecorderSetting(RecorderSettingKeys.ServerPort, int.Parse(defaultRecorderSettings[RecorderSettingKeys.ServerPort.ToString()]));
                 SetRecorderSetting(RecorderSettingKeys.RecordingFile, defaultRecorderSettings[RecorderSettingKeys.RecordingFile.ToString()]);
+                SetRecorderSetting(RecorderSettingKeys.ThemeFile, defaultRecorderSettings[RecorderSettingKeys.ThemeFile.ToString()]);
                 Save();
             }
         }

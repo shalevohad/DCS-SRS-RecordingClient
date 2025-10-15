@@ -18,14 +18,16 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
         public const int OUTPUT_SAMPLE_RATE = 48000;
 
         /// <summary>
-        /// OPUS frame size in samples for 20ms at 48kHz (mono)
+        /// OPUS frame size in samples for 40ms at 48kHz (mono)
+        /// SRS uses 40ms frames, not 20ms!
         /// </summary>
-        public const int OPUS_FRAME_SIZE = 960;
+        public const int OPUS_FRAME_SIZE = 1920;
 
         /// <summary>
         /// OPUS frame duration in milliseconds
+        /// SRS uses 40ms frames, not 20ms!
         /// </summary>
-        public const int OPUS_FRAME_DURATION_MS = 20;
+        public const int OPUS_FRAME_DURATION_MS = 40;
         
         /// <summary>
         /// Default volume level (100%)

@@ -7,6 +7,7 @@ using ShalevOhad.DCS.SRS.Recorder.PlayerClient.Models;
 using ShalevOhad.DCS.SRS.Recorder.PlayerClient.Services;
 using ShalevOhad.DCS.SRS.Recorder.Core;
 using ShalevOhad.DCS.SRS.Recorder.Core.Models;
+using ShalevOhad.DCS.SRS.Recorder.Core.Helpers;
 using NLog;
 
 namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.ViewModels

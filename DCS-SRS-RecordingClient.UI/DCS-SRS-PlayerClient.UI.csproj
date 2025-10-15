@@ -1,12 +1,14 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <OutputType>WinExe</OutputType>
     <TargetFramework>net9.0-windows</TargetFramework>
-    <RootNamespace>DCS_SRS_RecordingClient.UI</RootNamespace>
+    <RootNamespace>ShalevOhad.DCS.SRS.Recorder.PlayerClient.UI</RootNamespace>
     <Nullable>enable</Nullable>
     <UseWPF>true</UseWPF>
     <ImplicitUsings>enable</ImplicitUsings>
     <Platforms>x64</Platforms>
+    <StartupObject>ShalevOhad.DCS.SRS.Recorder.PlayerClient.UI.Program</StartupObject>
   </PropertyGroup>
 
   <ItemGroup>

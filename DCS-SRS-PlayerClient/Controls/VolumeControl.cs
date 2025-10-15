@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
+using ShalevOhad.DCS.SRS.Recorder.Core;
 using NLog;
 
 namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Controls
@@ -78,7 +79,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Controls
             SuspendLayout();
             
             // Set modern background
-            BackColor = Color.FromArgb(45, 48, 55);
+            BackColor = DesignLanguage.Colors.PanelDrawing;
 
             // Volume trackbar with modern styling
             _volumeTrackBar = new TrackBar
@@ -90,7 +91,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Controls
                 Location = new Point(0, 24),
                 Size = new Size(140, 24),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                BackColor = Color.FromArgb(45, 48, 55)
+                BackColor = DesignLanguage.Colors.PanelDrawing
             };
 
             // Volume label with modern styling
@@ -100,9 +101,9 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Controls
                 Location = new Point(0, 0),
                 Size = new Size(140, 20),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
-                ForeColor = Color.FromArgb(180, 180, 180),
-                BackColor = Color.FromArgb(45, 48, 55),
+                Font = DesignLanguage.Fonts.GetDrawingFont(DesignLanguage.Fonts.Small, FontStyle.Bold),
+                ForeColor = DesignLanguage.Colors.TextPrimaryDrawing,
+                BackColor = DesignLanguage.Colors.PanelDrawing,
                 TextAlign = ContentAlignment.TopCenter
             };
 

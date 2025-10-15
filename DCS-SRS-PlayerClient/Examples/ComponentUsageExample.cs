@@ -7,7 +7,7 @@ using ShalevOhad.DCS.SRS.Recorder.Core.Models;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Models;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player;
 
-namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient
+namespace DCS_SRS_PlayerClient.Examples
 {
     /// <summary>
     /// Example showing how to use the new reorganized components
@@ -28,8 +28,8 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient
 
         private void CreateExampleLayout()
         {
-            this.Size = new System.Drawing.Size(800, 600);
-            this.Text = "Reorganized Components Example";
+            Size = new Size(800, 600);
+            Text = "Reorganized Components Example";
 
             // File selection at the top
             _fileSelectionComponent = new FileSelectionComponent
@@ -37,7 +37,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient
                 Dock = DockStyle.Top,
                 Height = 55
             };
-            this.Controls.Add(_fileSelectionComponent);
+            Controls.Add(_fileSelectionComponent);
 
             // Tab control for different component examples
             var tabControl = new TabControl
@@ -75,7 +75,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient
             frequencyTab.Controls.Add(_frequencyTreeComponent);
             tabControl.TabPages.Add(frequencyTab);
 
-            this.Controls.Add(tabControl);
+            Controls.Add(tabControl);
         }
 
         private void SetupExampleEvents()
@@ -90,13 +90,13 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient
             // Player component events
             _playerComponent.StatusChanged += (sender, status) =>
             {
-                this.Text = $"Reorganized Components Example - {status}";
+                Text = $"Reorganized Components Example - {status}";
             };
 
             // Analyzer component events
             _analyzerComponent.StatusChanged += (sender, status) =>
             {
-                this.Text = $"Reorganized Components Example - Analysis: {status}";
+                Text = $"Reorganized Components Example - Analysis: {status}";
             };
 
             // Frequency tree events
@@ -122,7 +122,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient
         {
             var sampleFrequencies = new List<FrequencyModulationInfo>
             {
-                new FrequencyModulationInfo(251.0, (Modulation)0) // AM = 0
+                new FrequencyModulationInfo(251.0, 0) // AM = 0
                 {
                     Players = new List<PlayerFrequencyInfo>
                     {
@@ -159,11 +159,11 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient
 
         private void InitializeComponent()
         {
-            this.SuspendLayout();
-            this.ClientSize = new System.Drawing.Size(800, 600);
-            this.Name = "ComponentUsageExample";
-            this.Text = "Reorganized Components Example";
-            this.ResumeLayout(false);
+            SuspendLayout();
+            ClientSize = new Size(800, 600);
+            Name = "ComponentUsageExample";
+            Text = "Reorganized Components Example";
+            ResumeLayout(false);
         }
     }
 }

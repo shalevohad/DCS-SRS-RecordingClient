@@ -1,6 +1,7 @@
 using NAudio.Wave;
 using NAudio.CoreAudioApi;
 using NLog;
+using ShalevOhad.DCS.SRS.Recorder.Core.Helpers;
 
 namespace ShalevOhad.DCS.SRS.Recorder.Core.Audio
 {
@@ -63,15 +64,18 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core.Audio
             {
                 // Important for streaming: fill reads with silence instead of returning 0,
                 // otherwise WASAPI may stop or output nothing when buffer underruns.
-                ReadFully = false, // Changed: let NAudio handle this better
-                BufferLength = waveFormat.AverageBytesPerSecond * 3, // Increased buffer size
+                ReadFully = true, // CHANGED: Fill reads completely to prevent gaps
+                BufferLength = waveFormat.AverageBytesPerSecond * 5, // INCREASED: More buffering
                 DiscardOnBufferOverflow = false // Changed: don't discard audio data
             };
+
+            Logger.Info($"???  WASAPI Buffer: {_waveProvider.BufferLength} bytes ({_waveProvider.BufferLength / waveFormat.AverageBytesPerSecond}s)");
 
             _wasapiOut.Init(_waveProvider);
 
             // Set default volume to full volume initially for debugging
             _wasapiOut.Volume = 1.0f;
+            Logger.Info($"?? WASAPI Volume: {_wasapiOut.Volume:F2}");
 
             Logger.Info(
                 $"WASAPI initialized on device: '{device.FriendlyName}'. " +
@@ -248,16 +252,53 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core.Audio
                 _totalBytesWritten += audioData.Length;
                 _lastAudioWrite = DateTime.UtcNow;
                 
-                // Calculate audio statistics for logging
+                // Calculate audio statistics for logging using safe AudioHelpers
+                // Note: audioData should already be decoded PCM from AudioProcessingEngine.ProcessPacket()
+                // but we check format to be safe
+                short[] pcmSamples;
+                if (AudioHelpers.IsOpusEncodedByteArray(audioData))
+                {
+                    // Unexpected: should have been decoded before reaching here
+                    Logger.Warn($"Received Opus-encoded audio data ({audioData.Length} bytes) - decoding now, but this indicates upstream issue");
+                    pcmSamples = AudioHelpers.DecodeAudioToPcm(audioData);
+                }
+                else
+                {
+                    // Expected path: already decoded PCM bytes
+                    pcmSamples = AudioHelpers.ConvertBytesToPcm16(audioData);
+                }
+                
                 var maxAmplitude = 0;
                 var nonZeroSamples = 0;
-                for (int i = 0; i < audioData.Length - 1; i += 2)
+                
+                foreach (var sample in pcmSamples)
                 {
-                    var sample = Math.Abs(BitConverter.ToInt16(audioData, i));
-                    maxAmplitude = Math.Max(maxAmplitude, sample);
-                    if (sample > 100) // Consider samples above background noise level
+                    // Use safe Math.Abs that handles Int16.MinValue correctly
+                    var absSample = sample == short.MinValue ? short.MaxValue : Math.Abs(sample);
+                    maxAmplitude = Math.Max(maxAmplitude, absSample);
+                    if (absSample > 100) // Consider samples above background noise level
                         nonZeroSamples++;
                 }
+
+                // Critical audio output log
+                var engineType = _useSimpleFallback ? "SimpleEngine" : "WASAPI";
+                var amplitudePercent = (maxAmplitude / 32767.0) * 100.0;
+                Logger.Info($"?? OUTPUT: {engineType} - {audioData.Length} bytes, " +
+                           $"amplitude: {maxAmplitude}/32767 ({amplitudePercent:F1}%), " +
+                           $"active: {nonZeroSamples}/{pcmSamples.Length}");
+
+                // Critical warning if no audio
+                if (maxAmplitude == 0)
+                {
+                    Logger.Error($"? SILENT OUTPUT: All {pcmSamples.Length} samples are zero!");
+                }
+                else if (maxAmplitude < 500)
+                {
+                    Logger.Warn($"??  QUIET OUTPUT: Max amplitude only {maxAmplitude}/32767 ({amplitudePercent:F1}%) - may be inaudible");
+                }
+
+                // --- DEBUG: dump PCM bytes to WAV for inspection (post-conversion, pre-output)
+                DebugAudioDumper.DumpPcmBytesAsWav(audioData, Constants.OUTPUT_SAMPLE_RATE, "output_preplay");
 
                 if (_useSimpleFallback)
                 {
@@ -291,7 +332,22 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core.Audio
                         }
 
                         _waveProvider.AddSamples(audioData, 0, audioData.Length);
-                        Logger.Debug($"WASAPI audio written: {audioData.Length} bytes, max amplitude: {maxAmplitude}, active samples: {nonZeroSamples}/{audioData.Length / 2}, buffer: {_waveProvider.BufferedBytes}");
+                        
+                        // Detailed WASAPI write logging
+                        var bufferUsagePercent = (_waveProvider.BufferedBytes / (double)_waveProvider.BufferLength) * 100.0;
+                        var bufferTimeMs = (_waveProvider.BufferedBytes / (double)_waveProvider.WaveFormat.AverageBytesPerSecond) * 1000.0;
+                        
+                        Logger.Info($"?? WASAPI WRITE SUCCESS: " +
+                                   $"wrote {audioData.Length} bytes, " +
+                                   $"amplitude {maxAmplitude}/32767, " +
+                                   $"buffer: {_waveProvider.BufferedBytes}/{_waveProvider.BufferLength} ({bufferUsagePercent:F1}%, {bufferTimeMs:F0}ms), " +
+                                   $"playback: {_wasapiOut?.PlaybackState}");
+                        
+                        // Warn if buffer is getting too full
+                        if (bufferUsagePercent > 80)
+                        {
+                            Logger.Warn($"??  WASAPI buffer filling up: {bufferUsagePercent:F1}%");
+                        }
                     }
                 }
 

@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using System.IO;
+using System.Threading.Tasks;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Models;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Opus.Core;
 using NAudio.Wave;
@@ -32,6 +35,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
         private readonly AudioBufferManager _bufferManager; // Add buffer manager
         
         private bool _disposed;
+        private bool _hasExportedDebugWav; // Track if we've already exported debug WAV for this file
 
         #endregion
 
@@ -130,6 +134,24 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
         public void StartPlayback()
         {
             ThrowIfDisposed();
+            
+            // CRITICAL FIX: Ensure volume is set before playback starts
+            SetMasterVolume(1.0f);
+            Logger.Info("?? AudioPacketReader: Master volume explicitly set to 1.0 for playback");
+            
+            // ADDITIONAL FIX: Initialize processing engine explicitly
+            try
+            {
+                _processingEngine.Initialize();
+                _processingEngine.SetMasterVolume(1.0f);
+                Logger.Info("?? AudioProcessingEngine: Master volume explicitly set to 1.0 for playback");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Failed to initialize audio processing engine");
+                throw;
+            }
+            
             _playbackController.Start(_filePath, ProcessPlaybackAsync);
         }
 
@@ -241,6 +263,284 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
                 .Distinct()
                 .OrderBy(f => f)
                 .ToList();
+        }
+
+        /// <summary>
+        /// Export the combined audio of all currently selected frequency-modulation combinations
+        /// into two WAV files: one "before" audio manipulations (decoded & resampled)
+        /// and one "after" audio manipulations (volume/effects applied).
+        /// </summary>
+        public async Task ExportSelectedFrequenciesToWavAsync(string outputPath, CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+
+            var selected = SelectedFrequencyModulations?.ToList() ?? new List<(double, Modulation)>();
+            if (selected.Count == 0)
+                throw new InvalidOperationException("No selected frequency-modulation combinations to export.");
+
+            Logger.Info($"Exporting combined WAV for {selected.Count} selected frequency(s) to: {outputPath}");
+
+            // Read and filter packets from file
+            var allPackets = ReadAllPackets(cancellationToken).ToList();
+            var packets = allPackets.Where(p => selected.Any(s => Math.Abs(s.Item1 - p.Frequency) < 0.01 && s.Item2 == (Modulation)p.Modulation))
+                                    .OrderBy(p => p.Timestamp)
+                                    .ToList();
+
+            if (packets.Count == 0)
+            {
+                Logger.Warn("No packets found for the selected frequencies");
+                throw new InvalidOperationException("No packets found for the selected frequencies");
+            }
+
+            // Timeline: determine start and end timestamps using decoded lengths
+            var firstTs = packets.First().Timestamp;
+            DateTime lastTs = firstTs;
+            var sampleRate = Constants.OUTPUT_SAMPLE_RATE;
+
+            foreach (var pkt in packets)
+            {
+                if (cancellationToken.IsCancellationRequested) return;
+
+                var decoded = _processingEngine.DecodePacketToFloat(pkt);
+                if (decoded != null && decoded.Length > 0)
+                {
+                    var pktEnd = pkt.Timestamp + TimeSpan.FromSeconds((double)decoded.Length / sampleRate);
+                    if (pktEnd > lastTs) lastTs = pktEnd;
+                }
+            }
+
+            var totalSeconds = (lastTs - firstTs).TotalSeconds;
+            if (totalSeconds <= 0) totalSeconds = Constants.OPUS_FRAME_DURATION_MS / 1000.0; // fallback
+
+            var totalSamples = (int)Math.Ceiling(totalSeconds * sampleRate) + 1;
+            Logger.Debug($"Mix buffer: duration={totalSeconds:F3}s, samples={totalSamples}");
+
+            var beforeMix = new float[totalSamples];
+            var afterMix = new float[totalSamples];
+
+            // Mix packets into buffers by timestamp
+            foreach (var pkt in packets)
+            {
+                if (cancellationToken.IsCancellationRequested) break;
+
+                var decoded = _processingEngine.DecodePacketToFloat(pkt);
+                var processed = _processingEngine.ProcessPacket(pkt);
+
+                if ((decoded == null || decoded.Length == 0) && (processed == null || processed.Length == 0))
+                    continue;
+
+                var offsetSamples = (int)Math.Round((pkt.Timestamp - firstTs).TotalSeconds * sampleRate);
+                if (offsetSamples < 0) offsetSamples = 0;
+
+                if (decoded != null && decoded.Length > 0)
+                {
+                    for (int i = 0; i < decoded.Length; i++)
+                    {
+                        var idx = offsetSamples + i;
+                        if (idx >= beforeMix.Length) break;
+                        beforeMix[idx] += decoded[i];
+                    }
+                }
+
+                if (processed != null && processed.Length > 0)
+                {
+                    for (int i = 0; i < processed.Length; i++)
+                    {
+                        var idx = offsetSamples + i;
+                        if (idx >= afterMix.Length) break;
+                        afterMix[idx] += processed[i];
+                    }
+                }
+            }
+
+            // Normalize/clamp both buffers
+            void NormalizeBuffer(float[] buffer)
+            {
+                float max = 0f;
+                for (int i = 0; i < buffer.Length; i++)
+                {
+                    var a = Math.Abs(buffer[i]);
+                    if (a > max) max = a;
+                }
+
+                if (max > 1.0f)
+                {
+                    Logger.Debug($"Normalizing mixed audio (max={max:F4})");
+                    var inv = 1.0f / max;
+                    for (int i = 0; i < buffer.Length; i++) buffer[i] = Math.Clamp(buffer[i] * inv, -1.0f, 1.0f);
+                }
+                else
+                {
+                    for (int i = 0; i < buffer.Length; i++) buffer[i] = Math.Clamp(buffer[i], -1.0f, 1.0f);
+                }
+            }
+
+            NormalizeBuffer(beforeMix);
+            NormalizeBuffer(afterMix);
+
+            // Prepare output file paths (add _before/_after suffix if original path provided)
+            var dir = Path.GetDirectoryName(outputPath) ?? Environment.CurrentDirectory;
+            var name = Path.GetFileNameWithoutExtension(outputPath) ?? "combined";
+            var beforePath = Path.Combine(dir, name + "_before.wav");
+            var afterPath = Path.Combine(dir, name + "_after.wav");
+
+            try
+            {
+                var pcmBefore = AudioConverter.FloatToPcm16(beforeMix);
+                using (var writer = new WaveFileWriter(beforePath, new WaveFormat(sampleRate, 16, 1)))
+                {
+                    writer.Write(pcmBefore, 0, pcmBefore.Length);
+                    writer.Flush();
+                }
+
+                var pcmAfter = AudioConverter.FloatToPcm16(afterMix);
+                using (var writer = new WaveFileWriter(afterPath, new WaveFormat(sampleRate, 16, 1)))
+                {
+                    writer.Write(pcmAfter, 0, pcmAfter.Length);
+                    writer.Flush();
+                }
+
+                Logger.Info($"Exported combined WAVs: {beforePath} and {afterPath} ({beforeMix.Length} samples)");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, $"Failed to write combined WAVs to: {outputPath}");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Export the entire recording (all packets) into two WAV files: one decoded raw (before processing)
+        /// and one after passing through the audio processing pipeline (after processing).
+        /// </summary>
+        public async Task ExportFullRecordingToWavAsync(string outputPath, CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+
+            Logger.Info($"Exporting full recording to WAV: {outputPath}");
+
+            // Load all packets from file (no filtering)
+            var allPackets = ReadAllPackets(cancellationToken).ToList();
+            if (allPackets.Count == 0)
+            {
+                Logger.Warn("No packets found in recording for export");
+                throw new InvalidOperationException("No packets found in recording");
+            }
+
+            var firstTs = allPackets.First().Timestamp;
+            DateTime lastTs = firstTs;
+            var sampleRate = Constants.OUTPUT_SAMPLE_RATE;
+
+            foreach (var pkt in allPackets)
+            {
+                if (cancellationToken.IsCancellationRequested) return;
+
+                var decoded = _processingEngine.DecodePacketToFloat(pkt);
+                if (decoded != null && decoded.Length > 0)
+                {
+                    var pktEnd = pkt.Timestamp + TimeSpan.FromSeconds((double)decoded.Length / sampleRate);
+                    if (pktEnd > lastTs) lastTs = pktEnd;
+                }
+            }
+
+            var totalSeconds = (lastTs - firstTs).TotalSeconds;
+            if (totalSeconds <= 0) totalSeconds = Constants.OPUS_FRAME_DURATION_MS / 1000.0; // fallback
+
+            var totalSamples = (int)Math.Ceiling(totalSeconds * sampleRate) + 1;
+            Logger.Debug($"Full export mix buffer: duration={totalSeconds:F3}s, samples={totalSamples}");
+
+            var beforeMix = new float[totalSamples];
+            var afterMix = new float[totalSamples];
+
+            // Mix packets into buffers by timestamp
+            foreach (var pkt in allPackets)
+            {
+                if (cancellationToken.IsCancellationRequested) break;
+
+                var decoded = _processingEngine.DecodePacketToFloat(pkt);
+                var processed = _processingEngine.ProcessPacket(pkt);
+
+                if ((decoded == null || decoded.Length == 0) && (processed == null || processed.Length == 0))
+                    continue;
+
+                var offsetSamples = (int)Math.Round((pkt.Timestamp - firstTs).TotalSeconds * sampleRate);
+                if (offsetSamples < 0) offsetSamples = 0;
+
+                if (decoded != null && decoded.Length > 0)
+                {
+                    for (int i = 0; i < decoded.Length; i++)
+                    {
+                        var idx = offsetSamples + i;
+                        if (idx >= beforeMix.Length) break;
+                        beforeMix[idx] += decoded[i];
+                    }
+                }
+
+                if (processed != null && processed.Length > 0)
+                {
+                    for (int i = 0; i < processed.Length; i++)
+                    {
+                        var idx = offsetSamples + i;
+                        if (idx >= afterMix.Length) break;
+                        afterMix[idx] += processed[i];
+                    }
+                }
+            }
+
+            // Normalize/clamp both buffers
+            void NormalizeBuffer(float[] buffer)
+            {
+                float max = 0f;
+                for (int i = 0; i < buffer.Length; i++)
+                {
+                    var a = Math.Abs(buffer[i]);
+                    if (a > max) max = a;
+                }
+
+                if (max > 1.0f)
+                {
+                    Logger.Debug($"Normalizing mixed audio (max={max:F4})");
+                    var inv = 1.0f / max;
+                    for (int i = 0; i < buffer.Length; i++) buffer[i] = Math.Clamp(buffer[i] * inv, -1.0f, 1.0f);
+                }
+                else
+                {
+                    for (int i = 0; i < buffer.Length; i++) buffer[i] = Math.Clamp(buffer[i], -1.0f, 1.0f);
+                }
+            }
+
+            NormalizeBuffer(beforeMix);
+            NormalizeBuffer(afterMix);
+
+            // Prepare output file paths
+            var dir = Path.GetDirectoryName(outputPath) ?? Environment.CurrentDirectory;
+            var name = Path.GetFileNameWithoutExtension(outputPath) ?? "combined";
+            var beforePath = Path.Combine(dir, name + "_before.wav");
+            var afterPath = Path.Combine(dir, name + "_after.wav");
+
+            try
+            {
+                var pcmBefore = AudioConverter.FloatToPcm16(beforeMix);
+                using (var writer = new WaveFileWriter(beforePath, new WaveFormat(sampleRate, 16, 1)))
+                {
+                    writer.Write(pcmBefore, 0, pcmBefore.Length);
+                    writer.Flush();
+                }
+
+                var pcmAfter = AudioConverter.FloatToPcm16(afterMix);
+                using (var writer = new WaveFileWriter(afterPath, new WaveFormat(sampleRate, 16, 1)))
+                {
+                    writer.Write(pcmAfter, 0, pcmAfter.Length);
+                    writer.Flush();
+                }
+
+                Logger.Info($"Exported full recording WAVs: {beforePath} and {afterPath} ({beforeMix.Length} samples)");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, $"Failed to write full recording WAVs to: {outputPath}");
+                throw;
+            }
         }
 
         #endregion
@@ -428,12 +728,67 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core
                 }
 
                 var sortedPackets = packets.OrderBy(p => p.Timestamp).ToList();
-                Logger.Info($"Loaded {sortedPackets.Count} packets for playback (filtered from {totalPacketsRead} total packets)");
+                Logger.Info($"?? PACKET LOADING COMPLETE: Loaded {sortedPackets.Count} packets for playback (filtered from {totalPacketsRead} total packets)");
                 
                 if (sortedPackets.Count > 0)
                 {
                     var duration = sortedPackets[^1].Timestamp - sortedPackets[0].Timestamp;
-                    Logger.Info($"Playback duration: {duration}");
+                    Logger.Info($"   Playback duration: {duration}");
+                    
+                    // Log frequency distribution of loaded packets
+                    var freqGroups = sortedPackets.GroupBy(p => (Frequency: p.Frequency, Modulation: (Modulation)p.Modulation))
+                                                 .OrderBy(g => g.Key.Frequency)
+                                                 .ToList();
+                    Logger.Info($"   Frequency distribution in loaded packets:");
+                    foreach (var group in freqGroups.Take(10)) // Show first 10
+                    {
+                        Logger.Info($"      - {group.Key.Frequency:F1} Hz ({group.Key.Modulation}): {group.Count()} packets");
+                    }
+                    if (freqGroups.Count > 10)
+                    {
+                        Logger.Info($"      ... and {freqGroups.Count - 10} more frequencies");
+                    }
+                }
+
+                // If auto-export is enabled and we haven't exported yet, export full recording WAVs
+                try
+                {
+                    if (!_hasExportedDebugWav && sortedPackets.Count > 0)
+                    {
+                        var autoExportEnv = Environment.GetEnvironmentVariable("AUTO_EXPORT_DEBUG");
+                        var shouldAutoExport = Debugger.IsAttached || string.Equals(autoExportEnv, "1", StringComparison.OrdinalIgnoreCase);
+
+                        if (shouldAutoExport)
+                        {
+                            _hasExportedDebugWav = true; // Mark as exported to prevent duplicate exports
+                            
+                            // Run export in background so loading is not blocked
+                            _ = Task.Run(async () =>
+                            {
+                                try
+                                {
+                                    Logger.Info($"Auto-export enabled: exporting full recording WAVs (once per file)");
+
+                                    var outDir = Path.GetDirectoryName(_filePath) ?? Environment.CurrentDirectory;
+                                    var baseName = Path.GetFileNameWithoutExtension(_filePath) ?? "recording";
+                                    var outPath = Path.Combine(outDir, baseName + "_debug_export.wav");
+
+                                    await ExportFullRecordingToWavAsync(outPath, CancellationToken.None);
+
+                                    Logger.Info($"Auto-export completed: {outPath}_before.wav and {outPath}_after.wav");
+                                }
+                                catch (Exception ex)
+                                {
+                                    Logger.Warn(ex, "Auto-export failed");
+                                    _hasExportedDebugWav = false; // Reset flag on failure so user can retry
+                                }
+                            });
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warn(ex, "Failed to trigger auto-export");
                 }
 
                 return sortedPackets;

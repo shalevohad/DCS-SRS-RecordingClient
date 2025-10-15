@@ -81,6 +81,22 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Controls
                 _availableFrequencies = value ?? new List<FrequencyModulationInfo>();
                 PopulateFrequencyTree();
                 UpdateControlStates();
+                
+                // Auto-select all frequencies by default when frequencies are first loaded
+                if (_availableFrequencies.Any())
+                {
+                    // Use BeginInvoke to ensure TreeView has finished its internal updates
+                    // before we try to check all nodes
+                    this.BeginInvoke(new Action(() =>
+                    {
+                        SelectAllFrequencies();
+                        
+                        // Force TreeView to refresh and show the checked state
+                        _frequencyTreeView?.Refresh();
+                        _frequencyTreeView?.Invalidate();
+                    }));
+                }
+                
                 UpdateStatusLabel();
             }
         }
@@ -321,9 +337,24 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Controls
 
         /// <summary>
         /// Sets the available frequencies from recording information
+        /// Ensures UI updates happen on the UI thread.
         /// </summary>
         public void SetAvailableFrequencies(List<FrequencyModulationInfo> frequencies)
         {
+            if (InvokeRequired)
+            {
+                try
+                {
+                    BeginInvoke(new Action(() => SetAvailableFrequencies(frequencies)));
+                }
+                catch
+                {
+                    // If invoke fails, fall back to direct set (best-effort)
+                    AvailableFrequencies = frequencies;
+                }
+                return;
+            }
+
             AvailableFrequencies = frequencies;
         }
 
@@ -549,17 +580,22 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Controls
             if (_enableFilterCheckBox != null)
                 _enableFilterCheckBox.Enabled = hasFrequencies;
 
+            // Make the frequency tree visible and browsable when frequencies are available,
+            // even if the filter checkbox is not checked. This allows users to see the
+            // list immediately after loading a file, with all items unchecked by default.
             if (_frequencyTreeView != null)
-                _frequencyTreeView.Enabled = isFilterEnabled;
+                _frequencyTreeView.Enabled = hasFrequencies; // previously was isFilterEnabled
 
+            // Allow users to use select/clear/expand even when filter is not enabled,
+            // so they can prepare selections before enabling the filter if they want.
             if (_selectAllButton != null)
-                _selectAllButton.Enabled = isFilterEnabled;
+                _selectAllButton.Enabled = hasFrequencies; // previously was isFilterEnabled
 
             if (_selectNoneButton != null)
-                _selectNoneButton.Enabled = isFilterEnabled;
+                _selectNoneButton.Enabled = hasFrequencies; // previously was isFilterEnabled
 
             if (_expandCollapseButton != null)
-                _expandCollapseButton.Enabled = isFilterEnabled;
+                _expandCollapseButton.Enabled = hasFrequencies; // previously was isFilterEnabled
         }
 
         private void UpdateStatusLabel()

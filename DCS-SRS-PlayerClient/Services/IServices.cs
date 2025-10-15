@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using ShalevOhad.DCS.SRS.Recorder.PlayerClient.Models;
+using ShalevOhad.DCS.SRS.Recorder.Core.Models;
 
 namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Services
 {
@@ -158,5 +160,160 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Services
         /// Gets whether the user is currently seeking on the waveform
         /// </summary>
         bool IsUserSeeking { get; }
+
+        /// <summary>
+        /// Event fired when user seeks on the waveform
+        /// </summary>
+        event EventHandler<int>? SeekRequested;
+    }
+
+    /// <summary>
+    /// Service contract for real-time analysis visualization
+    /// </summary>
+    public interface IAnalysisVisualizationService
+    {
+        /// <summary>
+        /// Updates the frequency spectrum display
+        /// </summary>
+        void UpdateFrequencySpectrum(double[] frequencyData, double[] magnitudeData);
+
+        /// <summary>
+        /// Updates the transmission activity display
+        /// </summary>
+        void UpdateTransmissionActivity(Core.AudioPacketMetadata packet);
+
+        /// <summary>
+        /// Clears all analysis displays
+        /// </summary>
+        void ClearDisplays();
+
+        /// <summary>
+        /// Shows/hides the analysis panels
+        /// </summary>
+        void SetAnalysisVisibility(bool visible);
+    }
+
+    /// <summary>
+    /// Service contract for hierarchical frequency management
+    /// </summary>
+    public interface IFrequencyTreeService
+    {
+        /// <summary>
+        /// Loads frequency data and organizes it into a tree structure
+        /// </summary>
+        Task LoadFrequencyTreeAsync(List<FrequencyModulationInfo> frequencies);
+
+        /// <summary>
+        /// Gets the currently selected frequency/modulation combinations
+        /// </summary>
+        List<FrequencyModulationInfo> GetSelectedFrequencies();
+
+        /// <summary>
+        /// Sets the selection state for specific frequencies
+        /// </summary>
+        void SetFrequencySelection(List<FrequencyModulationInfo> selectedFrequencies);
+
+        /// <summary>
+        /// Expands/collapses frequency groups by type
+        /// </summary>
+        void SetGroupExpansion(string groupName, bool expanded);
+
+        /// <summary>
+        /// Event fired when frequency selection changes
+        /// </summary>
+        event EventHandler<List<FrequencyModulationInfo>>? SelectionChanged;
+    }
+
+    /// <summary>
+    /// Service contract for managing recent files
+    /// </summary>
+    public interface IRecentFilesService
+    {
+        /// <summary>
+        /// Gets the list of recent files
+        /// </summary>
+        List<RecentFileInfo> GetRecentFiles();
+
+        /// <summary>
+        /// Adds a file to the recent files list
+        /// </summary>
+        void AddRecentFile(string filePath, string displayName = "");
+
+        /// <summary>
+        /// Removes a file from recent files
+        /// </summary>
+        void RemoveRecentFile(string filePath);
+
+        /// <summary>
+        /// Clears all recent files
+        /// </summary>
+        void ClearRecentFiles();
+
+        /// <summary>
+        /// Event fired when recent files list changes
+        /// </summary>
+        event EventHandler? RecentFilesChanged;
+    }
+
+    /// <summary>
+    /// Service contract for managing audio bookmarks
+    /// </summary>
+    public interface IBookmarkService
+    {
+        /// <summary>
+        /// Adds a bookmark at the specified position
+        /// </summary>
+        Task AddBookmarkAsync(string filePath, TimeSpan position, string description = "");
+
+        /// <summary>
+        /// Removes a bookmark
+        /// </summary>
+        Task RemoveBookmarkAsync(string filePath, TimeSpan position);
+
+        /// <summary>
+        /// Gets all bookmarks for a file
+        /// </summary>
+        Task<List<AudioBookmark>> GetBookmarksAsync(string filePath);
+
+        /// <summary>
+        /// Updates bookmark description
+        /// </summary>
+        Task UpdateBookmarkAsync(string filePath, TimeSpan position, string newDescription);
+
+        /// <summary>
+        /// Event fired when bookmarks change
+        /// </summary>
+        event EventHandler<string>? BookmarksChanged;
+    }
+
+    /// <summary>
+    /// Service contract for live audio analysis during playback
+    /// </summary>
+    public interface ILiveAnalysisService
+    {
+        /// <summary>
+        /// Starts live analysis for the current playback
+        /// </summary>
+        void StartAnalysis();
+
+        /// <summary>
+        /// Stops live analysis
+        /// </summary>
+        void StopAnalysis();
+
+        /// <summary>
+        /// Processes an audio packet for analysis
+        /// </summary>
+        void ProcessPacket(Core.AudioPacketMetadata packet);
+
+        /// <summary>
+        /// Gets current analysis statistics
+        /// </summary>
+        LiveAnalysisStats GetCurrentStats();
+
+        /// <summary>
+        /// Event fired when analysis data is updated
+        /// </summary>
+        event EventHandler<LiveAnalysisStats>? AnalysisUpdated;
     }
 }

@@ -38,6 +38,12 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Models
         private bool _isPaused;
         private List<FrequencyModulationInfo> _availableFrequencies = new();
         private List<FrequencyModulationInfo> _selectedFrequencies = new();
+        private List<RecentFileInfo> _recentFiles = new();
+        private List<AudioBookmark> _bookmarks = new();
+        private LiveAnalysisStats _liveAnalysisStats = LiveAnalysisStats.Empty;
+        private bool _isAnalysisEnabled = true;
+        private bool _isExportEnabled = true;
+        private WaveformData _waveformData = new(Array.Empty<float>(), Array.Empty<float>(), TimeSpan.Zero, 48000);
 
         #endregion
 
@@ -187,6 +193,42 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Models
             set => SetProperty(ref _selectedFrequencies, value ?? new());
         }
 
+        public List<RecentFileInfo> RecentFiles
+        {
+            get => _recentFiles;
+            set => SetProperty(ref _recentFiles, value ?? new());
+        }
+
+        public List<AudioBookmark> Bookmarks
+        {
+            get => _bookmarks;
+            set => SetProperty(ref _bookmarks, value ?? new());
+        }
+
+        public LiveAnalysisStats LiveAnalysisStats
+        {
+            get => _liveAnalysisStats;
+            set => SetProperty(ref _liveAnalysisStats, value);
+        }
+
+        public bool IsAnalysisEnabled
+        {
+            get => _isAnalysisEnabled;
+            set => SetProperty(ref _isAnalysisEnabled, value);
+        }
+
+        public bool IsExportEnabled
+        {
+            get => _isExportEnabled;
+            set => SetProperty(ref _isExportEnabled, value);
+        }
+
+        public WaveformData WaveformData
+        {
+            get => _waveformData;
+            set => SetProperty(ref _waveformData, value);
+        }
+
         #endregion
 
         #region Computed Properties
@@ -240,6 +282,50 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Models
             IsSeekEnabled = false;
             UpdatePlaybackState(false, false);
             IsBrowseEnabled = true;
+            LiveAnalysisStats = LiveAnalysisStats.Empty;
+        }
+
+        public void AddBookmark(TimeSpan position, string description)
+        {
+            if (!string.IsNullOrEmpty(FilePath))
+            {
+                var bookmark = new AudioBookmark(FilePath, position, description, DateTime.Now);
+                var bookmarks = new List<AudioBookmark>(Bookmarks) { bookmark };
+                Bookmarks = bookmarks;
+            }
+        }
+
+        public void RemoveBookmark(AudioBookmark bookmark)
+        {
+            var bookmarks = new List<AudioBookmark>(Bookmarks);
+            bookmarks.Remove(bookmark);
+            Bookmarks = bookmarks;
+        }
+
+        public void UpdateLiveAnalysis(LiveAnalysisStats stats)
+        {
+            if (IsAnalysisEnabled)
+            {
+                LiveAnalysisStats = stats;
+            }
+        }
+
+        public void AddRecentFile(string filePath, TimeSpan duration, int packetCount)
+        {
+            var displayName = System.IO.Path.GetFileName(filePath);
+            var recentFile = new RecentFileInfo(filePath, displayName, DateTime.Now, duration, packetCount);
+            
+            var recentFiles = new List<RecentFileInfo>(RecentFiles);
+            recentFiles.RemoveAll(rf => rf.FilePath.Equals(filePath, StringComparison.OrdinalIgnoreCase));
+            recentFiles.Insert(0, recentFile);
+            
+            // Keep only the last 10 recent files
+            if (recentFiles.Count > 10)
+            {
+                recentFiles = recentFiles.Take(10).ToList();
+            }
+            
+            RecentFiles = recentFiles;
         }
 
         #endregion

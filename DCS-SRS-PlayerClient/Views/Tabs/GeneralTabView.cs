@@ -31,6 +31,13 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Tabs
         private IUIService? _uiService;
         private IWaveformService? _waveformService;
         
+        // Enhanced services
+        private IAnalysisVisualizationService? _analysisVisualizationService;
+        private IFrequencyTreeService? _frequencyTreeService;
+        private IRecentFilesService? _recentFilesService;
+        private IBookmarkService? _bookmarkService;
+        private ILiveAnalysisService? _liveAnalysisService;
+        
         #endregion
 
         #region Component-Based Layout
@@ -180,7 +187,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Tabs
                     Dock = DockStyle.Fill,
                     Padding = new Padding(8),
                     BackColor = SystemColors.Control, // Add background color for visibility
-                    MinimumSize = new Size(600, 400)
+                    MinimumSize = new Size(800, 600)  // Ensure minimum size for the entire tab
                 };
                 Controls.Add(_mainPanel);
                 Logger.Info($"Main panel created. Size: {_mainPanel.Size}");
@@ -235,7 +242,9 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views.Tabs
                 {
                     Height = 55,
                     Dock = DockStyle.Top,
-                    BackColor = SystemColors.Control
+                    BackColor = SystemColors.Control,
+                    MinimumSize = new Size(400, 55),  // Ensure minimum width
+                    MaximumSize = new Size(0, 55)      // Fixed height
                 };
                 _mainPanel.Controls.Add(_fileSelectionComponent);
                 

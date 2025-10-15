@@ -21,6 +21,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core.Settings
         EnableDebugLogging,
         LastRecordingFile,
         EnableFrequencyFilterByDefault,
+        ThemeFile,
         
         // Window Settings
         WindowWidth,
@@ -51,6 +52,7 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core.Settings
             { PlayerSettingKeys.EnableDebugLogging.ToString(), "true" },
             { PlayerSettingKeys.LastRecordingFile.ToString(), "" },
             { PlayerSettingKeys.EnableFrequencyFilterByDefault.ToString(), "false" },
+            { PlayerSettingKeys.ThemeFile.ToString(), "light.json" },
             
             // Window Settings
             { PlayerSettingKeys.WindowWidth.ToString(), "950" },
@@ -198,6 +200,8 @@ namespace ShalevOhad.DCS.SRS.Recorder.Core.Settings
             SetPlayerSetting(PlayerSettingKeys.EnableDebugLogging, bool.Parse(defaultPlayerSettings[PlayerSettingKeys.EnableDebugLogging.ToString()]));
             SetPlayerSetting(PlayerSettingKeys.LastRecordingFile, defaultPlayerSettings[PlayerSettingKeys.LastRecordingFile.ToString()]);
             SetPlayerSetting(PlayerSettingKeys.EnableFrequencyFilterByDefault, bool.Parse(defaultPlayerSettings[PlayerSettingKeys.EnableFrequencyFilterByDefault.ToString()]));
+            // Theme default
+            SetPlayerSetting(PlayerSettingKeys.ThemeFile, defaultPlayerSettings[PlayerSettingKeys.ThemeFile.ToString()]);
             
             // Window defaults
             SetPlayerSetting(PlayerSettingKeys.WindowWidth, int.Parse(defaultPlayerSettings[PlayerSettingKeys.WindowWidth.ToString()]));

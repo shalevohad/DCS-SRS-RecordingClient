@@ -22,8 +22,8 @@ namespace ShalevOhad.DCS.SRS.Recorder.PlayerClient.Views
         
         private const int DefaultFormWidth = 1200;
         private const int DefaultFormHeight = 900;
-        private const int MinimumFormWidth = 800;
-        private const int MinimumFormHeight = 600;
+        private const int MinimumFormWidth = 900;
+        private const int MinimumFormHeight = 700;
         
         #endregion
 
